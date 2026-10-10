@@ -186,33 +186,64 @@ export function useResearchEnvironment() {
 
     setIsProcessing(true);
 
-    // Multi-Agent Pipeline Simulation Steps with authentic latency
     try {
-      setPipelineStepMessage('User node dispatched query. Orchestrator analyzing problem scope...');
-      await new Promise((r) => setTimeout(r, 900));
+      setPipelineStepMessage('Dispatching to orchestrator...');
+      
+      // Call real backend orchestrator API
+      const response = await fetch('http://localhost:8000/api/orchestrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          research_brief: queryText,
+          paper_url: attachedFiles[0]?.name || null,  // TODO: handle real file uploads
+        }),
+      });
 
-      setPipelineStepMessage('Literature Scout scanning attached context & retrieving citations [1, 2]...');
-      await new Promise((r) => setTimeout(r, 1100));
+      if (!response.ok) {
+        throw new Error(`Orchestrator returned ${response.status}`);
+      }
 
-      setPipelineStepMessage('Hypothesis Engine & Experiment Critic verifying methodology constraints [3, 5]...');
-      await new Promise((r) => setTimeout(r, 1100));
+      const result = await response.json();
+      const sessionId = result.session_id;
+      
+      setPipelineStepMessage(`Session ${sessionId} started. Agents executing...`);
+      
+      // TODO: Connect to WebSocket for real-time updates
+      // For now, poll status endpoint
+      let attempts = 0;
+      const maxAttempts = 60;  // 5 minutes max
+      
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 5000));  // Poll every 5s
+        
+        const statusResp = await fetch(`http://localhost:8000/api/status/${sessionId}`);
+        if (!statusResp.ok) break;
+        
+        const statusData = await statusResp.json();
+        setPipelineStepMessage(
+          `${statusData.active_agent} running... (${statusData.current_task_index + 1}/${statusData.task_nodes.length} tasks)`
+        );
+        
+        if (statusData.status === 'completed' || statusData.status === 'stopped') {
+          break;
+        }
+        
+        attempts++;
+      }
 
-      setPipelineStepMessage('Report Drafter synthesizing executive summary, findings, and formal bibliography...');
-      await new Promise((r) => setTimeout(r, 1000));
-
+      // Generate report (for now still using mock — will be replaced when Drafter is built)
       const generatedReport = buildSynthesizedReport(queryText, attachedFiles);
 
       const assistantMessage: ResearchMessage = {
         id: generateId('msg'),
         role: 'assistant',
-        content: `I have completed the multi-agent empirical synthesis for: "${queryText}".
+        content: `Multi-agent pipeline completed for: "${queryText}".
 
-Key highlights:
-- Evaluated against peer-reviewed baselines [1, 2, 3].
-- Document context ingested (${attachedFiles.length} file${attachedFiles.length === 1 ? '' : 's'}).
-- Formal research report synthesized with ${generatedReport.citations.length} academic citations.
+Session ID: ${sessionId}
+Agents deployed: ${result.task_nodes?.length || 0}
+Status: ${result.status}
 
-You can inspect the complete report with comparative tables below or export a formatted PDF anytime.`,
+The research synthesis is available below.`,
         timestamp: new Date().toISOString(),
         reportId: generatedReport.id,
       };
@@ -225,6 +256,27 @@ You can inspect the complete report with comparative tables below or export a fo
               report: generatedReport,
               messages: [...s.messages, assistantMessage],
               status: 'completed',
+            };
+          }
+          return s;
+        })
+      );
+    } catch (error) {
+      console.error('Research query failed:', error);
+      const errorMessage: ResearchMessage = {
+        id: generateId('msg'),
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Make sure the orchestrator (port 8000) and sandbox (port 8001) are running.`,
+        timestamp: new Date().toISOString(),
+      };
+      
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id === activeSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, errorMessage],
+              status: 'error',
             };
           }
           return s;

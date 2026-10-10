@@ -1,0 +1,315 @@
+{
+  "name": "ARES Meta-Controller Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ares-trigger",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ares-research-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/orchestrate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "research_brief",
+              "value": "={{ $json.body.research_brief }}"
+            },
+            {
+              "name": "paper_url",
+              "value": "={{ $json.body.paper_url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-orchestrator",
+      "name": "Call Orchestrator API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-init",
+      "name": "Wait for Session Init",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:8000/api/status/{{ $json.session_id }}",
+        "options": {}
+      },
+      "id": "http-status-check",
+      "name": "Poll Session Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "if-completed",
+      "name": "Check if Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "wait-retry",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1350, 450]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Loop back to status check\nreturn items;"
+      },
+      "id": "loop-back",
+      "name": "Loop Back to Status Check",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1130, 450]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:8000/api/logs/{{ $json.session_id }}",
+        "options": {}
+      },
+      "id": "http-fetch-logs",
+      "name": "Fetch Execution Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1350, 150]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract key metrics and format report\nconst logs = $input.all();\nconst session = logs[0].json;\n\nconst report = {\n  session_id: session.session_id,\n  status: session.status,\n  research_brief: session.research_brief,\n  task_count: session.task_nodes.length,\n  completed_tasks: session.task_nodes.filter(t => t.status === 'completed').length,\n  active_agent: session.active_agent,\n  verification: session.verification,\n  paper_info: session.paper_info,\n  execution_time_sec: Math.floor((Date.now() - new Date(session.created_at).getTime()) / 1000),\n  logs: session.logs.slice(-20) // Last 20 log lines\n};\n\nreturn [{ json: report }];"
+      },
+      "id": "format-report",
+      "name": "Format Execution Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1570, 150]
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "fromEmail": "ares-bot@example.com",
+        "toEmail": "={{ $json.user_email || 'researcher@example.com' }}",
+        "subject": "=ARES Research Pipeline Complete: {{ $json.research_brief.slice(0, 50) }}",
+        "emailFormat": "html",
+        "message": "=<h2>ARES Research Execution Complete</h2>\n<p><strong>Session ID:</strong> {{ $json.session_id }}</p>\n<p><strong>Status:</strong> {{ $json.status }}</p>\n<p><strong>Tasks Completed:</strong> {{ $json.completed_tasks }}/{{ $json.task_count }}</p>\n<p><strong>Execution Time:</strong> {{ $json.execution_time_sec }}s</p>\n<h3>Verification Result</h3>\n<pre>{{ JSON.stringify($json.verification, null, 2) }}</pre>\n<h3>Paper Info</h3>\n<pre>{{ JSON.stringify($json.paper_info, null, 2) }}</pre>\n<p>View full results at: http://localhost:5173</p>",
+        "options": {}
+      },
+      "id": "email-notify",
+      "name": "Send Notification Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1790, 150],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"🧪 ARES Pipeline Complete\",\n  \"blocks\": [\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*ARES Research Pipeline Complete*\\n{{ $json.research_brief }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Status:*\\n{{ $json.status }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Tasks:*\\n{{ $json.completed_tasks }}/{{ $json.task_count }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Execution Time:*\\n{{ $json.execution_time_sec }}s\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Novel:*\\n{{ $json.verification.is_novel }}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "slack-notify",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1790, 300],
+      "disabled": true,
+      "notes": "Enable and configure Slack webhook URL"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8001/api/sandbox/cleanup",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "session_id",
+              "value": "={{ $json.session_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cleanup-sandbox",
+      "name": "Cleanup Sandbox Resources",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2010, 150]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call Orchestrator API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Orchestrator API": {
+      "main": [
+        [
+          {
+            "node": "Wait for Session Init",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Session Init": {
+      "main": [
+        [
+          {
+            "node": "Poll Session Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Session Status": {
+      "main": [
+        [
+          {
+            "node": "Check if Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Completed": {
+      "main": [
+        [
+          {
+            "node": "Fetch Execution Logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Back to Status Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Back to Status Check": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Retry": {
+      "main": [
+        [
+          {
+            "node": "Poll Session Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Execution Logs": {
+      "main": [
+        [
+          {
+            "node": "Format Execution Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Execution Report": {
+      "main": [
+        [
+          {
+            "node": "Send Notification Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Notification Email": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Sandbox Resources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "1"
+}

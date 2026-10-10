@@ -1,13 +1,18 @@
 """Dynamic agent spawner and in-memory session/state manager for ARES."""
 import asyncio
+import os
 import time
 from typing import Any, Dict, List, Optional
 
+import httpx
+
+from paper_reader import read_paper
 from task_parser import DecomposedPlan
 from verifier import verify_hypothesis_novelty
 
-# Simulated per-task execution time (seconds). Replace with real agent/sandbox calls later.
-SIMULATED_TASK_SECONDS = 2.0
+# Sandbox API endpoint (Module 2)
+SANDBOX_API_URL = os.getenv("SANDBOX_API_URL", "http://localhost:8001/api/sandbox/execute")
+SANDBOX_TIMEOUT = 600  # 10 minutes max per sandbox run
 
 
 class AgentRegistry:
@@ -91,7 +96,19 @@ class SessionStore:
 
     def log(self, session_id: str, message: str) -> None:
         session = self._sessions[session_id]
-        session["logs"].append({"timestamp": time.time(), "message": message})
+        log_entry = {"timestamp": time.time(), "message": message}
+        session["logs"].append(log_entry)
+        # Broadcast to WebSocket clients
+        try:
+            import asyncio
+            from main import broadcast_session_update
+            asyncio.create_task(broadcast_session_update(
+                session_id,
+                "log",
+                {"message": message, "timestamp": log_entry["timestamp"]}
+            ))
+        except Exception:
+            pass  # If main not imported yet or no event loop, skip broadcast
 
     def stop(self, session_id: str) -> Optional[Dict[str, Any]]:
         session = self._sessions.get(session_id)
@@ -150,9 +167,50 @@ async def execute_task_pipeline(session_id: str) -> None:
                 )
                 return
 
+        # Paper Reader with Vision: extract architecture if this is the first Coding task
+        if task["agent_assigned"] == "Coding" and "paper_info" not in session:
+            session["active_agent"] = "Paper Reader (GPT-4o Vision)"
+            session_store.log(session_id, "Paper Reader analyzing research document...")
+            
+            try:
+                paper_info = await read_paper(
+                    paper_url=session.get("paper_url"),
+                    extract_diagrams=True
+                )
+                session["paper_info"] = paper_info
+                session_store.log(
+                    session_id,
+                    f"Paper Reader extracted: '{paper_info['title']}' — "
+                    f"Architecture: {paper_info['architecture'][:80]}..."
+                )
+                if paper_info.get("diagrams_analyzed"):
+                    session_store.log(
+                        session_id,
+                        f"GPT-4o Vision notes: {paper_info.get('vision_notes', 'N/A')[:120]}..."
+                    )
+            except Exception as exc:
+                session_store.log(session_id, f"Paper Reader error (non-fatal): {exc}")
+                session["paper_info"] = {"title": "Fallback baseline", "architecture": "N/A"}
+
         session["current_task_index"] = index
         session["active_agent"] = task["agent_assigned"]
         task["status"] = "running"
+        
+        # Broadcast agent state change
+        try:
+            from main import broadcast_session_update
+            await broadcast_session_update(
+                session_id,
+                "agent_state",
+                {
+                    "active_agent": task["agent_assigned"],
+                    "task_id": task["id"],
+                    "task_name": task["task_name"],
+                    "status": "running"
+                }
+            )
+        except Exception:
+            pass
 
         try:
             prompt = AgentRegistry.get_prompt(task["agent_assigned"], task["task_name"])
@@ -163,25 +221,44 @@ async def execute_task_pipeline(session_id: str) -> None:
             return
 
         if AgentRegistry.is_code_task(task["agent_assigned"]):
-            # Payload contract expected by Member 2 (Sandbox).
-            payload = {
-                "session_id": session_id,
-                "script_name": "train.py",
-                "action": "execute",
-                "prompt": prompt,
-            }
+            # Call Module 2 sandbox API with the ExecuteRequest contract
             session_store.log(
-                session_id,
-                f"{task['id']}: sandbox payload prepared for {payload['script_name']} "
-                f"(action={payload['action']}).",
+                session_id, f"{task['id']}: invoking sandbox execution for train.py..."
             )
+            
+            try:
+                sandbox_result = await call_sandbox_api(
+                    experiment_id=f"{session_id}_{task['id']}",
+                    code_patch=prompt,  # In real flow, this would be the LLM-generated train.py
+                    timeout_seconds=300,
+                )
+                
+                task["sandbox_result"] = sandbox_result
+                session_store.log(
+                    session_id,
+                    f"{task['id']}: sandbox returned status={sandbox_result['status']}, "
+                    f"loss={sandbox_result['metrics'].get('experiment_loss', 'N/A')}"
+                )
+                
+                # Check if we need self-healing
+                if sandbox_result["status"] in ("HEALED", "SUCCESS"):
+                    task["status"] = "completed"
+                elif sandbox_result["status"] == "FAILURE":
+                    task["status"] = "failed"
+                    task["error"] = sandbox_result.get("error_message", "Sandbox execution failed")
+                else:
+                    task["status"] = "partial"
+                    
+            except Exception as exc:
+                task["status"] = "failed"
+                task["error"] = str(exc)
+                session_store.log(session_id, f"{task['id']} sandbox call failed: {exc}")
+                # Don't halt the entire pipeline — let it continue to Drafter
+                
         else:
-            session_store.log(session_id, f"{task['id']}: drafting prompt prepared.")
-
-        session_store.log(
-            session_id, f"{task['id']} ({task['agent_assigned']}): simulated execution started."
-        )
-        await asyncio.sleep(SIMULATED_TASK_SECONDS)
+            # Non-code tasks (e.g., Drafter) — simulate for now
+            session_store.log(session_id, f"{task['id']}: drafting prompt prepared (simulated).")
+            await asyncio.sleep(2.0)
 
         # A stop may have arrived during execution.
         if session["stop_requested"] or session["status"] == "stopped":
@@ -196,3 +273,44 @@ async def execute_task_pipeline(session_id: str) -> None:
     session["active_agent"] = "None"
     session["status"] = "completed"
     session_store.log(session_id, "Pipeline completed.")
+
+
+
+# ── Sandbox API Integration ──────────────────────────────────────────────────
+
+async def call_sandbox_api(
+    experiment_id: str,
+    code_patch: str,
+    timeout_seconds: int = 300,
+) -> Dict[str, Any]:
+    """
+    Call Module 2's POST /api/sandbox/execute endpoint.
+    
+    Returns the ExecuteResponse schema:
+    {
+        "status": "SUCCESS" | "HEALED" | "FAILURE" | "TIMEOUT",
+        "experiment_id": str,
+        "stdout": str,
+        "stderr": str,
+        "metrics": {
+            "baseline_loss": float,
+            "experiment_loss": float,
+            "baseline_accuracy": float,
+            "experiment_accuracy": float,
+            "execution_time_s": float
+        },
+        "git_hash": str | null,
+        "heal_attempts": [...],
+        "error_message": str | null
+    }
+    """
+    payload = {
+        "experiment_id": experiment_id,
+        "code_patch": code_patch,
+        "timeout_seconds": timeout_seconds,
+    }
+    
+    async with httpx.AsyncClient(timeout=SANDBOX_TIMEOUT) as client:
+        response = await client.post(SANDBOX_API_URL, json=payload)
+        response.raise_for_status()
+        return response.json()

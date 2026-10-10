@@ -9,11 +9,11 @@ export class AresApiService {
   private isConnected = false;
   private reconnectTimer: number | null = null;
   private config: ConnectionConfig = {
-    mode: 'simulator',
+    mode: 'websocket',  // Changed from 'simulator' to 'websocket' for real backend
     wsUrl: 'ws://localhost:8000/ws',
     sseUrl: 'http://localhost:8000/api/stream',
-    orchestratorUrl: 'http://localhost:5678/webhook/ares',
-    sandboxApiUrl: 'http://localhost:8000/api/sandbox',
+    orchestratorUrl: 'http://localhost:8000/api/orchestrate',
+    sandboxApiUrl: 'http://localhost:8001/api/sandbox',
     autoReconnect: true,
   };
 

@@ -372,6 +372,8 @@ export function useAresStream() {
     isConnected,
     selectedAgentId,
     setSelectedAgentId,
+    setAgents,
+    setLogs,
     emergencyModalOpen,
     setEmergencyModalOpen,
     connectionModalOpen,

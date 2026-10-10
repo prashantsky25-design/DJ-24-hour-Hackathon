@@ -1,89 +1,118 @@
 @import "tailwindcss";
 
+/* ── Design Tokens ─────────────────────────────────────────── */
 :root {
-  --bg-main: #FAFAF9;
-  --bg-sidebar: #FFFFFF;
+  --bg-main: #F7F7F5;
+  --bg-sidebar: #FAFAF8;
   --surface: #FFFFFF;
-  --surface-secondary: #F3F3F1;
-  --text-primary: #242424;
-  --text-secondary: #737373;
-  --border: #E5E5E3;
+  --surface-secondary: #F2F2F0;
+  --surface-elevated: #FFFFFF;
+  --text-primary: #1A1A1A;
+  --text-secondary: #6B6B6B;
+  --text-muted: #9E9E9E;
+  --border: #E4E4E2;
+  --border-strong: #CACAC8;
   --input-bg: #FFFFFF;
-  --hover: #F3F3F1;
-  --accent: #4F46E5;
-  --accent-hover: #4338CA;
-  --accent-subtle: #EEF2FF;
-  --badge-bg: #F3F4F6;
-  --badge-text: #4B5563;
-  --code-bg: #F5F5F4;
-  --graph-bg: #F8F9FA;
-  --graph-grid: #E2E8F0;
+  --hover: #EFEFED;
+  --accent: #5B50E8;
+  --accent-hover: #4B42D4;
+  --accent-subtle: #EEEDFD;
+  --code-bg: #F0F0EE;
+  --graph-bg: #F4F4F2;
+  --graph-grid: #DCDCDA;
+  --success: #16A34A;
+  --warning: #D97706;
+  --error: #DC2626;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 }
 
 [data-theme="dark"],
 .dark {
-  --bg-main: #181818;
-  --bg-sidebar: #202020;
-  --surface: #222222;
-  --surface-secondary: #2C2C2C;
-  --text-primary: #E8E8E8;
-  --text-secondary: #A3A3A3;
-  --border: #363636;
-  --input-bg: #252525;
-  --hover: #2C2C2C;
-  --accent: #6366F1;
-  --accent-hover: #4F46E5;
-  --accent-subtle: #29264E;
-  --badge-bg: #2A2A2A;
-  --badge-text: #9CA3AF;
-  --code-bg: #141414;
-  --graph-bg: #12151D;
-  --graph-grid: #232B3E;
+  --bg-main: #111111;
+  --bg-sidebar: #161616;
+  --surface: #1C1C1C;
+  --surface-secondary: #242424;
+  --surface-elevated: #202020;
+  --text-primary: #EBEBEB;
+  --text-secondary: #999999;
+  --text-muted: #666666;
+  --border: #2E2E2E;
+  --border-strong: #404040;
+  --input-bg: #1C1C1C;
+  --hover: #242424;
+  --accent: #6B62F0;
+  --accent-hover: #5B50E8;
+  --accent-subtle: #201E3A;
+  --code-bg: #151515;
+  --graph-bg: #0F0F0F;
+  --graph-grid: #202020;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --error: #EF4444;
 }
 
-* {
+/* ── Base Reset ─────────────────────────────────────────────── */
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
 body {
   background-color: var(--bg-main);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.12s ease, color 0.12s ease;
   overflow-x: hidden;
 }
 
-/* Custom Sleek Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* ── Focus rings ────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
+button:focus-visible { border-radius: var(--radius-sm); }
 
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 9999px;
-}
+/* ── Typography helpers ─────────────────────────────────────── */
+.font-mono { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace; }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
-}
+/* ── ReactFlow customizations ───────────────────────────────── */
+.react-flow__attribution { display: none !important; }
+.react-flow__node { cursor: pointer; }
+.react-flow__edge-path { stroke-width: 2; }
+.react-flow__controls { border: 1px solid var(--border) !important; background: var(--surface) !important; border-radius: var(--radius-md) !important; }
+.react-flow__controls-button { background: transparent !important; border-bottom-color: var(--border) !important; color: var(--text-secondary) !important; }
+.react-flow__controls-button:hover { background: var(--hover) !important; }
+.react-flow__minimap { border: 1px solid var(--border) !important; border-radius: var(--radius-md) !important; }
 
-/* React Flow customizations */
-.react-flow__attribution {
-  display: none !important;
+/* ── Animation utilities ─────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
+.animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
 
-.react-flow__node {
-  cursor: pointer;
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
+.animate-slide-up { animation: slide-up 0.2s ease-out forwards; }
 
-.react-flow__edge-path {
-  stroke-width: 2.5;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
+.animate-fade-in { animation: fade-in 0.15s ease-out forwards; }
