@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "title": "Inspect the app structure and current agent mapping UI",
+      "status": "in-progress"
+    },
+    {
+      "title": "Redesign the mapping popup and its content split",
+      "status": "pending"
+    },
+    {
+      "title": "Run the project checks and review the result",
+      "status": "pending"
+    }
+  ],
+  "updated_at": "2026-10-10T09:58:34.183Z",
+  "session_id": "01a1253f-4374-715e-a936-cea085ff54ea"
+}
