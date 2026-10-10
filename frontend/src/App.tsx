@@ -14,6 +14,7 @@ import { ResearchWorkspace } from './components/workspace/ResearchWorkspace';
 import { ResearchReportViewer } from './components/report/ResearchReportViewer';
 import { PipelineExecutionModal } from './components/pipeline/PipelineExecutionModal';
 import { AttachedDocument } from './types/research';
+import { classifyQuery, QueryPlan } from './services/intentRouter';
 import { FileText, GitBranch, Zap } from 'lucide-react';
 
 export function App() {
@@ -21,6 +22,7 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<QueryPlan | null>(null);
 
   const { theme, toggleTheme } = useTheme();
 
@@ -63,13 +65,15 @@ export function App() {
 
   const { start: startSimulator } = usePipelineSimulator(setAgents, setLogs);
 
-  /* Intercept sendResearchQuery to auto-open the pipeline modal */
+  /* Intercept sendResearchQuery: decide which agents are needed, then open the modal */
   const handleSendQuery = useCallback(
     async (queryText: string, attachedFiles: AttachedDocument[]) => {
+      const plan = classifyQuery(queryText, attachedFiles.length);
+      setCurrentPlan(plan);
       setPipelineModalOpen(true);
 
-      // In simulator mode: reset agents to idle, then walk them sequentially
-      if (config.mode === 'simulator') {
+      // Animate the planned agents (always for chat, since no backend is involved there)
+      if (config.mode === 'simulator' || plan.intent === 'chat') {
         setAgents(prev =>
           prev.map(ag =>
             ag.id !== 'arxiv-radar'
@@ -77,19 +81,20 @@ export function App() {
               : ag
           )
         );
-        startSimulator();
+        startSimulator(plan);
       }
 
-      await sendResearchQuery(queryText, attachedFiles);
+      await sendResearchQuery(queryText, attachedFiles, plan);
     },
     [sendResearchQuery, config.mode, setAgents, startSimulator]
   );
 
-  /* When "View Report →" is clicked inside modal */
+  /* When the footer button is clicked inside modal */
   const handleModalViewReport = useCallback(() => {
     setPipelineModalOpen(false);
-    setActiveTab('report');
-  }, []);
+    // Chat replies have no report; stay in the conversation.
+    if (currentPlan?.intent !== 'chat') setActiveTab('report');
+  }, [currentPlan]);
 
   return (
     <div
@@ -274,6 +279,8 @@ export function App() {
         pipelineStepMessage={pipelineStepMessage}
         isProcessing={isProcessing}
         sessionStatus={activeSession?.status}
+        planAgentIds={currentPlan?.agentIds}
+        hasReport={currentPlan ? currentPlan.intent !== 'chat' : true}
       />
 
       {/* ── Other modals ───────────────────────────── */}

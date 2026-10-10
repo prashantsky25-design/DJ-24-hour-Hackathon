@@ -1,4 +1,5 @@
 import { ResearchReport, CitationReference, AttachedDocument } from '../types/research';
+import type { QueryIntent } from './intentRouter';
 
 export const BENCHMARK_CITATIONS: CitationReference[] = [
   {
@@ -48,105 +49,79 @@ export const BENCHMARK_CITATIONS: CitationReference[] = [
   },
 ];
 
-export function buildSynthesizedReport(
+export async function buildSynthesizedReport(
   query: string,
-  documents: AttachedDocument[] = []
-): ResearchReport {
-  const docSummary = documents.length > 0
-    ? ` Ingestion completed for ${documents.length} attached document(s): ${documents.map((d) => `"${d.name}"`).join(', ')}.`
-    : ' No external documents attached; baseline corpus and academic index utilized.';
+  documents: AttachedDocument[] = [],
+  intent: QueryIntent = 'experiment'
+): Promise<ResearchReport> {
+  const base = {
+    id: `rep-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+    title: `Investigation on ${query.slice(0, 50)}${query.length > 50 ? '...' : ''}`,
+    generatedAt: new Date().toISOString(),
+    query,
+    citations: BENCHMARK_CITATIONS,
+    executiveSummary: '',
+    methodology: '',
+    findings: [],
+    comparisons: [],
+    limitations: '',
+  };
 
-  const queryLower = query.toLowerCase();
-  
-  // Detect query type to customize report
-  const isKAN = queryLower.includes('kan');
-  const isMLP = queryLower.includes('mlp');
-  const isMNIST = queryLower.includes('mnist');
-  const isFlashAttention = queryLower.includes('flash') || queryLower.includes('attention');
-  const isTransformer = queryLower.includes('transformer');
-  const isKnowledgeDistillation = queryLower.includes('distillation');
-  const isResNet = queryLower.includes('resnet');
-  
-  // Generate contextual title
-  let title = `Investigation on ${query.slice(0, 80)}${query.length > 80 ? '...' : ''}`;
-  
-  // Generate contextual findings based on query keywords
-  let findings: string[];
-  let comparisons: { baseline: string; proposed: string; delta: string }[];
-  
-  if (isKAN && isMLP && isMNIST) {
-    title = 'Kolmogorov-Arnold Networks vs Multi-Layer Perceptrons on MNIST: A Comparative Analysis';
-    findings = [
-      'KAN architectures with learnable B-spline activations demonstrate 7.7% higher accuracy than standard MLPs on MNIST classification (90.9% vs 83.2%).',
-      'Grid-based spline interpolation in KAN layers provides superior feature learning compared to fixed ReLU activations in traditional MLPs.',
-      'Training convergence for KAN required 54.1% fewer epochs (15 vs 30) to reach equivalent validation loss thresholds.',
-      'GPU memory overhead for KAN was 40.9% lower due to sparse activation patterns (9.1 GB vs 15.4 GB peak VRAM).',
-      'Throughput metrics show KAN achieving 93.7% faster inference (798 samples/sec vs 412 samples/sec) on A100 GPUs.',
-    ];
-    comparisons = [
-      { baseline: 'MLP Val Loss: 1.09', proposed: 'KAN Val Loss: 0.50', delta: '-54.1% (Better)' },
-      { baseline: 'MLP Accuracy: 83.2%', proposed: 'KAN Accuracy: 90.9%', delta: '+7.7% absolute' },
-      { baseline: 'MLP VRAM Peak: 15.4 GB', proposed: 'KAN VRAM Peak: 9.1 GB', delta: '-40.9% (Optimized)' },
-      { baseline: 'MLP Throughput: 412 smp/s', proposed: 'KAN Throughput: 798 smp/s', delta: '+93.7% (Faster)' },
-    ];
-  } else if (isFlashAttention) {
-    title = 'FlashAttention Memory Optimization and Throughput Analysis';
-    findings = [
-      'FlashAttention-2 achieves 2.3x speedup over standard multi-head attention on long-context sequences (8K tokens).',
-      'Memory usage reduced by 61.3% through IO-aware tiling and kernel fusion optimizations.',
-      'Backward pass efficiency improved by 47.8% via recomputation strategies instead of storing intermediate attention matrices.',
-      'Scaling to 16K context length maintains sub-linear memory growth (18.2 GB vs projected 42.1 GB for naive implementation).',
-      'Integration with rotary positional embeddings (RoPE) preserved accuracy within 0.2% margin of baseline.',
-    ];
-    comparisons = [
-      { baseline: 'Standard Attention Memory: 42.1 GB', proposed: 'FlashAttention Memory: 18.2 GB', delta: '-56.8% (Optimized)' },
-      { baseline: 'Standard Latency: 2.84s/batch', proposed: 'FlashAttention Latency: 1.23s/batch', delta: '-56.7% (Faster)' },
-      { baseline: 'Throughput: 124 tok/s', proposed: 'Throughput: 287 tok/s', delta: '+131.5% (Speedup)' },
-    ];
-  } else if (isKnowledgeDistillation && isResNet) {
-    title = 'Knowledge Distillation vs Network Pruning for ResNet Compression';
-    findings = [
-      'Knowledge distillation from ResNet-50 teacher to ResNet-18 student retained 94.2% of original accuracy (92.1% vs 97.8%).',
-      'Structured pruning achieved 3.2x compression ratio but suffered 8.4% accuracy degradation.',
-      'Temperature scaling (T=4) in distillation loss optimized student convergence within 20 epochs.',
-      'Hybrid approach (distillation + fine-grained pruning) recovered 96.5% accuracy at 2.1x compression.',
-      'Inference latency for distilled ResNet-18: 12.3ms vs 34.7ms for original ResNet-50 (64.6% faster).',
-    ];
-    comparisons = [
-      { baseline: 'ResNet-50 Accuracy: 97.8%', proposed: 'Distilled ResNet-18: 92.1%', delta: '-5.7% (Acceptable)' },
-      { baseline: 'ResNet-50 Params: 25.6M', proposed: 'Distilled ResNet-18: 11.7M', delta: '-54.3% (Compressed)' },
-      { baseline: 'ResNet-50 Latency: 34.7ms', proposed: 'Distilled Latency: 12.3ms', delta: '-64.6% (Faster)' },
-    ];
-  } else {
-    // Generic machine learning comparison
-    findings = [
-      `Proposed methodology demonstrates substantial improvement over baseline approaches across key performance metrics.`,
-      `Literature reconciliation confirms alignment with recent peer-reviewed work [1, 2, 3], validating theoretical foundations.`,
-      `Multi-agent decomposition enabled parallel hypothesis testing with 61.3% reduced latency compared to sequential exploration.`,
-      `Self-refinement feedback loops [5] caught critical edge cases during validation, improving robustness by 18.2%.`,
-      `GPU resource utilization optimized through mixed-precision training and gradient checkpointing (40.9% memory savings).`,
-    ];
-    comparisons = [
-      { baseline: 'Validation Loss: 1.09', proposed: 'Validation Loss: 0.50', delta: '-54.1% (Improved)' },
-      { baseline: 'GPU VRAM Peak: 15.4 GB', proposed: 'GPU VRAM Peak: 9.1 GB', delta: '-40.9% (Optimized)' },
-      { baseline: 'Throughput: 412 smp/s', proposed: 'Throughput: 798 smp/s', delta: '+93.7% (Faster)' },
-      { baseline: 'Top-1 Accuracy: 83.2%', proposed: 'Top-1 Accuracy: 90.9%', delta: '+7.7% absolute' },
-    ];
+  try {
+    const docNames = documents.map(d => d.name);
+    const response = await fetch('http://localhost:8001/api/report/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        documents: docNames,
+        intent
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        ...base,
+        title: data.title || base.title,
+        executiveSummary: data.executiveSummary || '',
+        methodology: data.methodology || '',
+        findings: data.findings || [],
+        comparisons: data.comparisons || [],
+        limitations: data.limitations || '',
+      };
+    } else {
+      console.error('Failed to generate report from backend:', await response.text());
+    }
+  } catch (error) {
+    console.error('Error generating report:', error);
+  }
+
+  // Fallback if the API call fails
+  const docSummary = documents.length > 0
+    ? ` Ingestion completed for ${documents.length} attached document(s).`
+    : ' No external documents attached.';
+
+  if (intent === 'literature' || intent === 'paper') {
+    return {
+      ...base,
+      title: `${intent === 'paper' ? 'Paper Analysis' : 'Literature Review'}: ${query.slice(0, 50)}`,
+      executiveSummary: `This review addresses the inquiry "${query}".${docSummary} Only the required agents were engaged; no sandbox experiments were run.`,
+      methodology: `(1) Orchestrator classified request; (2) Paper Reader gathered sources; (3) Drafter compiled summary.`,
+      findings: [`The request was answered from the literature and attached material only.`],
+      comparisons: [],
+      limitations: `This is a text-only synthesis, generated as a fallback due to an API error.`,
+    };
   }
 
   return {
-    id: `rep-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
-    title,
-    generatedAt: new Date().toISOString(),
-    query,
-    executiveSummary:
-      `This report synthesizes empirical investigations initiated by the user inquiry: "${query}". An autonomous dynamic team of specialized AI agents—spanning literature reconnaissance, code generation, sandbox execution, and technical writing—was deployed to formulate a structured evaluation.${docSummary} The resulting synthesis demonstrates measurable improvements across key performance indicators, validated through controlled experimentation in isolated E2B compute environments.`,
-    methodology:
-      `The research protocol followed a closed-loop multi-agent workflow: (1) The Orchestrator decomposed the inquiry into executable subtasks; (2) The Paper Reader extracted architectural specifications from academic sources [1, 2]; (3) The Coding Agent synthesized PyTorch training scripts adhering to prepare.py contracts; (4) The E2B Sandbox Executor performed git-gated training runs with A100 GPU acceleration; (5) The Self-Healing Agent (Gemini API) debugged runtime errors through iterative refinement [5]; (6) The Report Drafter compiled findings with formal citations and delivered structured output to the user interface.`,
-    findings,
-    comparisons,
-    limitations:
-      `Observations are subject to bounded computational budgets and single-dataset evaluation. While empirical convergence was verified on the specified task, real-world generalization across heterogeneous datasets and hardware configurations warrants extended validation. Hyperparameter sensitivity analysis and ablation studies remain future work. The multi-agent orchestration pipeline introduces coordination overhead (~2-3 seconds) which could be optimized through asynchronous message passing.`,
-    citations: BENCHMARK_CITATIONS,
+    ...base,
+    executiveSummary: `This report synthesizes empirical investigations initiated by the user inquiry regarding "${query}".${docSummary} (Fallback report due to API error)`,
+    methodology: `The research protocol followed a closed-loop multi-agent workflow.`,
+    findings: [`API generation failed, showing fallback data.`],
+    comparisons: [],
+    limitations: `Observations are subject to bounded context windows and document resolution constraints.`,
   };
 }

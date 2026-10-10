@@ -69,6 +69,10 @@ interface PipelineExecutionModalProps {
   pipelineStepMessage: string;
   isProcessing: boolean;
   sessionStatus?: string;
+  /** Agent ids this query needs; omitted = show the full pipeline. */
+  planAgentIds?: string[];
+  /** Whether a report will be produced (controls the footer button). */
+  hasReport?: boolean;
 }
 
 /* ─────────────────────────────────────────────────────────── */
@@ -171,13 +175,11 @@ function logColor(level: string) {
 function mapAgentStatus(agent?: AgentNodeData): StepStatus {
   if (!agent) return 'pending';
   switch (agent.status) {
-    case 'running':   return 'running';
-    case 'spawning':  return 'running';
-    case 'completed': return 'completed';  // New: map 'completed' agent status
-    case 'retired':   return 'completed';  // Old: still support 'retired' for backward compat
-    case 'error':     return 'failed';
-    case 'idle':      return 'pending';
-    default:          return 'pending';
+    case 'running':  return 'running';
+    case 'spawning': return 'running';
+    case 'retired':  return 'completed';
+    case 'error':    return 'failed';
+    default:         return 'pending';
   }
 }
 
@@ -283,9 +285,13 @@ const nodeTypes = { pipelineNode: PipelineFlowNode };
 function PipelineGraph({
   steps,
   revealedIds,
+  positions,
+  edges,
 }: {
   steps: PipelineStep[];
   revealedIds: Set<string>;
+  positions: Record<string, { x: number; y: number }>;
+  edges: [string, string][];
 }) {
   const { fitView } = useReactFlow();
 
@@ -298,16 +304,16 @@ function PipelineGraph({
     steps.map(step => ({
       id: step.id,
       type: 'pipelineNode',
-      position: NODE_POSITIONS[step.id] || { x: 0, y: 0 },
+      position: positions[step.id] || { x: 0, y: 0 },
       data: {
         ...step,
         revealed: revealedIds.has(step.id),
       },
     }))
-  , [steps, revealedIds]);
+  , [steps, revealedIds, positions]);
 
   const rfEdges: Edge[] = useMemo(() =>
-    EDGE_DEFS
+    edges
       .filter(([src, tgt]) => revealedIds.has(src) && revealedIds.has(tgt))
       .map(([src, tgt]) => {
         const srcStep = steps.find(s => s.id === src);
@@ -333,7 +339,7 @@ function PipelineGraph({
           },
         };
       })
-  , [steps, revealedIds]);
+  , [steps, revealedIds, edges]);
 
   return (
     <ReactFlow
@@ -378,6 +384,8 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
   pipelineStepMessage,
   isProcessing,
   sessionStatus,
+  planAgentIds,
+  hasReport = true,
 }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -389,9 +397,25 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
     }
   }, [logs, autoScroll]);
 
+  /* ── Plan: only the agents this query actually needs ── */
+  const { planDef, positions, edgeDefs } = useMemo(() => {
+    const isFull = !planAgentIds || planAgentIds.length >= PIPELINE_DEF.length - 1;
+    if (isFull) {
+      return { planDef: PIPELINE_DEF, positions: NODE_POSITIONS, edgeDefs: EDGE_DEFS };
+    }
+    const wanted = new Set(['user-node', ...planAgentIds]);
+    const ordered = PIPELINE_DEF.filter(d => wanted.has(d.id));
+    // Linear layout + simple chain: user → a → b → c ...
+    const pos: Record<string, { x: number; y: number }> = {};
+    ordered.forEach((d, i) => { pos[d.id] = { x: 60 + i * 230, y: 240 }; });
+    const def = ordered.map((d, i) => ({ ...d, after: i === 0 ? [] : [ordered[i - 1].id] }));
+    const edges: [string, string][] = ordered.slice(1).map((d, i) => [ordered[i].id, d.id]);
+    return { planDef: def, positions: pos, edgeDefs: edges };
+  }, [planAgentIds]);
+
   /* ── Build live steps from agent state ── */
   const steps: PipelineStep[] = useMemo(() => {
-    return PIPELINE_DEF.map(def => {
+    return planDef.map(def => {
       const agent = agents.find(a => a.id === def.agentId);
       let status: StepStatus;
       if (def.id === 'user-node') {
@@ -408,7 +432,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
           : (agent?.currentTask ?? undefined),
       };
     });
-  }, [agents, query]);
+  }, [agents, query, planDef]);
 
   /* ── Progressive reveal: a node is revealed when ──
      1. It is 'user-node' (always), OR
@@ -424,7 +448,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
     let changed = true;
     while (changed) {
       changed = false;
-      for (const step of PIPELINE_DEF) {
+      for (const step of planDef) {
         if (revealed.has(step.id)) continue;
         const liveStep = steps.find(s => s.id === step.id)!;
         const selfActive = liveStep.status === 'running' || liveStep.status === 'completed' || liveStep.status === 'failed';
@@ -439,20 +463,27 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
       }
     }
     return revealed;
-  }, [steps]);
+  }, [steps, planDef]);
 
   /* Overall progress (only count non-hidden steps) */
   const completedCount = steps.filter(s => s.status === 'completed').length;
   const visibleCount   = revealedIds.size;
-  // Calculate progress based on actual agent count (exclude user node from denominator)
-  const agentCount = PIPELINE_DEF.length - 1;  // 7 agents (8 steps minus user node)
-  const completedAgents = steps.filter(s => s.status === 'completed' && s.id !== 'user-node').length;
-  const progress = Math.round((completedAgents / agentCount) * 100);
+  const progress = Math.round((completedCount / planDef.length) * 100);
   const isDone   = !isProcessing && (sessionStatus === 'completed' || sessionStatus === 'completed_with_warnings');
   const isFailed = sessionStatus === 'error';
 
   /* Active agent name for header */
   const activeStep = steps.find(s => s.status === 'running');
+
+  /* Auto-close for queries that do not generate a report (like chat) */
+  useEffect(() => {
+    if (isOpen && isDone && !hasReport) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 800); // short delay to see the green completion state
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, isDone, hasReport, onClose]);
 
   if (!isOpen) return null;
 
@@ -509,7 +540,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
           <div className="flex items-center gap-3 shrink-0">
             {/* Progress */}
             <span className="text-[10px] font-mono" style={{ color: '#52525B' }}>
-              {completedCount}/{PIPELINE_DEF.length}
+              {completedCount}/{planDef.length}
             </span>
             <div className="w-24 h-1 rounded-full overflow-hidden" style={{ background: '#2A2A2A' }}>
               <div
@@ -582,7 +613,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
             {/* ReactFlow */}
             <div className="flex-1 min-h-0">
               <ReactFlowProvider>
-                <PipelineGraph steps={steps} revealedIds={revealedIds} />
+                <PipelineGraph steps={steps} revealedIds={revealedIds} positions={positions} edges={edgeDefs} />
               </ReactFlowProvider>
             </div>
           </div>
@@ -696,7 +727,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
         >
           {/* Step pipeline dots */}
           <div className="flex items-center gap-2">
-            {PIPELINE_DEF.map((def, i) => {
+            {planDef.map((def, i) => {
               const step = steps.find(s => s.id === def.id)!;
               const revealed = revealedIds.has(def.id);
               const color = !revealed       ? '#1E1E1E'
@@ -766,7 +797,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
                 onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
                 onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
               >
-                View Report →
+                {hasReport ? 'View Report →' : 'Close'}
               </button>
             )}
           </div>

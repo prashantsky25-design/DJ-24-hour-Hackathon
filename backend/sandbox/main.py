@@ -261,3 +261,73 @@ def _outcome_to_status(outcome: HealingOutcome) -> ExecutionStatus:
         HealingOutcome.HEALED:  ExecutionStatus.HEALED,
         HealingOutcome.FAILED:  ExecutionStatus.FAILURE,
     }.get(outcome, ExecutionStatus.FAILURE)
+
+from pydantic import BaseModel
+import json
+import os
+
+class ReportRequest(BaseModel):
+    query: str
+    documents: list[str] = []
+    intent: str = "experiment"
+
+@app.post("/api/report/generate", tags=["Report"])
+async def generate_report(payload: ReportRequest):
+    """Dynamically generate a research report using the configured LLM."""
+    query = payload.query
+    intent = payload.intent
+    
+    # Try using google-genai
+    api_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured.")
+        
+    try:
+        from google import genai
+        from google.genai import types
+        
+        client = genai.Client(api_key=api_key)
+        
+        prompt = f"""You are an expert AI research scientist drafting a structured technical report.
+The user's query was: "{query}"
+The intent classification is: "{intent}"
+Attached documents: {', '.join(payload.documents) if payload.documents else 'None'}
+
+Draft a highly professional, accurate, and relevant report based on the query. If the query is about "longitude and latitude", the report should be about geography and coordinates, NOT machine learning. If the query is about ML, it should be about ML.
+
+Respond ONLY with a valid JSON object matching this schema exactly (no markdown formatting, no comments):
+{{
+  "title": "A concise title",
+  "executiveSummary": "1-2 paragraphs summarizing the findings.",
+  "methodology": "How the research was conducted.",
+  "findings": ["finding 1", "finding 2", "finding 3"],
+  "comparisons": [
+    {{"baseline": "Baseline value", "proposed": "Proposed value", "delta": "Difference"}}
+  ],
+  "limitations": "A paragraph on limitations of this research."
+}}
+"""
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                response_mime_type="application/json"
+            )
+        )
+        
+        result_json = response.text
+        if result_json.startswith("```json"):
+            result_json = result_json[7:]
+        if result_json.startswith("```"):
+            result_json = result_json[3:]
+        if result_json.endswith("```"):
+            result_json = result_json[:-3]
+        result_json = result_json.strip()
+        
+        data = json.loads(result_json)
+        return data
+        
+    except Exception as exc:
+        log.exception("api.report_generate_error", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))

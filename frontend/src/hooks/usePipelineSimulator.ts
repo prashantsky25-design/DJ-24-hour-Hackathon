@@ -16,6 +16,7 @@
 import { useCallback, useRef } from 'react';
 import { AgentNodeData } from '../types/agent';
 import { TerminalLogEntry } from '../types/log';
+import type { QueryPlan } from '../services/intentRouter';
 
 const SEQUENCE: {
   id: string;
@@ -25,7 +26,7 @@ const SEQUENCE: {
 }[] = [
   {
     id: 'orchestrator',
-    durationMs: 5500,  // Increased from 2800
+    durationMs: 2800,
     task: 'Decomposing research brief into 4 task nodes...',
     logs: [
       '[Orchestrator] Received research brief. Decomposing into task DAG...',
@@ -35,7 +36,7 @@ const SEQUENCE: {
   },
   {
     id: 'paper-reader',
-    durationMs: 6000,  // Increased from 3200
+    durationMs: 3200,
     task: 'GPT-4o Vision extracting architecture diagrams from PDF...',
     logs: [
       '[Paper Reader] Downloading paper PDF...',
@@ -46,7 +47,7 @@ const SEQUENCE: {
   },
   {
     id: 'dynamic-spawner',
-    durationMs: 4500,  // Increased from 2200
+    durationMs: 2200,
     task: 'Spawning Coding Agent and Sandbox Executor sub-tasks...',
     logs: [
       '[Task Planner] Citations extracted: 3 relevant papers found.',
@@ -56,7 +57,7 @@ const SEQUENCE: {
   },
   {
     id: 'coding-agent',
-    durationMs: 7500,  // Increased from 4000
+    durationMs: 4000,
     task: 'Synthesising train.py with KAN layer implementation...',
     logs: [
       '[Coding Agent] Writing train.py based on paper architecture...',
@@ -67,7 +68,7 @@ const SEQUENCE: {
   },
   {
     id: 'sandbox-executor',
-    durationMs: 9000,  // Increased from 5000
+    durationMs: 5000,
     task: 'Git-gated execution in E2B sandbox (commit a7f3b89)...',
     logs: [
       '[E2B] Sandbox created. Template: python3, timeout: 300s',
@@ -80,7 +81,7 @@ const SEQUENCE: {
   },
   {
     id: 'debugging-agent',
-    durationMs: 5500,  // Increased from 3000
+    durationMs: 3000,
     task: 'Audit: verifying metrics and git-gated state...',
     logs: [
       '[Self-Healer] Reviewing execution logs for anomalies...',
@@ -91,7 +92,7 @@ const SEQUENCE: {
   },
   {
     id: 'drafter-agent',
-    durationMs: 5000,  // Increased from 2500
+    durationMs: 2500,
     task: 'Generating IEEE-format LaTeX report draft...',
     logs: [
       '[Drafter] Rendering IEEE LaTeX template...',
@@ -118,6 +119,82 @@ function makeLog(message: string, source: TerminalLogEntry['source'] = 'system')
   };
 }
 
+type SequenceStep = (typeof SEQUENCE)[number];
+
+/** Wording used when the plan is NOT a full code experiment. */
+function lightweightOverride(id: string, plan: QueryPlan): Partial<SequenceStep> | undefined {
+  switch (id) {
+    case 'orchestrator':
+      return plan.intent === 'chat'
+        ? {
+            durationMs: 1200,
+            task: 'Reading message — no sub-agents required.',
+            logs: [
+              '[Orchestrator] Classified request as direct conversation.',
+              '[Orchestrator] No research agents needed. Replying directly.',
+              '[System] Pipeline complete. No agents were spawned.',
+            ],
+          }
+        : {
+            durationMs: 2200,
+            task: `Routing request as "${plan.label}"...`,
+            logs: [
+              `[Orchestrator] Classified request as: ${plan.label}.`,
+              `[Orchestrator] Spawning ${plan.agentIds.length - 1} agent(s): ${plan.agentIds.slice(1).join(' → ')}.`,
+              '[Orchestrator] Skipping code execution and sandbox — not required.',
+            ],
+          };
+    case 'paper-reader':
+      return {
+        durationMs: 3000,
+        task: 'Retrieving and reading relevant sources...',
+        logs: [
+          '[Paper Reader] Searching literature for the research question...',
+          '[Paper Reader] Extracting key claims and citations from sources.',
+          '[Paper Reader] Notes written to session context ✓',
+        ],
+      };
+    case 'dynamic-spawner':
+      return {
+        durationMs: 2000,
+        task: 'Structuring the analysis outline...',
+        logs: [
+          '[Task Planner] Outlining sections from extracted notes.',
+          '[Task Planner] Handing outline to Drafter Agent.',
+        ],
+      };
+    case 'drafter-agent':
+      return {
+        durationMs: 2500,
+        task: 'Writing the research summary...',
+        logs: [
+          '[Drafter] Composing summary from gathered sources...',
+          '[Drafter] Formatting citations.',
+          '[Drafter] Report compiled ✓',
+          '[System] Pipeline complete. All agents retired.',
+        ],
+      };
+    default:
+      return undefined;
+  }
+}
+
+/** Build the ordered list of steps to animate for a given plan. */
+export function buildSequence(plan?: QueryPlan): SequenceStep[] {
+  if (!plan) return SEQUENCE;
+  return plan.agentIds
+    .map(id => SEQUENCE.find(s => s.id === id))
+    .filter((s): s is SequenceStep => Boolean(s))
+    .map(step =>
+      plan.intent === 'experiment' ? step : { ...step, ...lightweightOverride(step.id, plan) },
+    );
+}
+
+/** Total simulated duration for a plan (ms). */
+export function planDurationMs(plan?: QueryPlan): number {
+  return buildSequence(plan).reduce((sum, s) => sum + s.durationMs, 0);
+}
+
 export function usePipelineSimulator(
   setAgents: SetAgentsFn,
   setLogs?: SetLogsFn,
@@ -129,7 +206,7 @@ export function usePipelineSimulator(
     timerRefs.current = [];
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback((plan?: QueryPlan) => {
     cancel();
 
     // Initial system log
@@ -139,7 +216,7 @@ export function usePipelineSimulator(
 
     let elapsed = 0;
 
-    SEQUENCE.forEach(({ id, durationMs, task, logs }) => {
+    buildSequence(plan).forEach(({ id, durationMs, task, logs }) => {
       // Activate agent
       const activateTimer = setTimeout(() => {
         setAgents(prev =>
@@ -174,7 +251,7 @@ export function usePipelineSimulator(
             ag.id === id
               ? {
                   ...ag,
-                  status: 'completed',  // New 'completed' status (green, no pulse)
+                  status: 'retired',
                   currentTask: task.replace('...', ' ✓'),
                   lastActive: 'Just now',
                   tokensUsed: ag.tokensUsed + Math.floor(Math.random() * 8000 + 2000),

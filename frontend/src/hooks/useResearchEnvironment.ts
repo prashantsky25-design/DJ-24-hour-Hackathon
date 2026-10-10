@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ResearchSession, AttachedDocument, ResearchReport, ResearchMessage } from '../types/research';
 import { buildSynthesizedReport } from '../services/researchService';
 import { aresApi } from '../services/apiService';
+import { classifyQuery, QueryPlan } from '../services/intentRouter';
+import { planDurationMs } from './usePipelineSimulator';
 
 const SESSIONS_STORAGE_KEY = 'ps3_research_sessions';
 const ACTIVE_SESSION_STORAGE_KEY = 'ps3_active_session_id';
@@ -10,18 +12,18 @@ function generateId(prefix = 'sess') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 }
 
-const INITIAL_REPORT = buildSynthesizedReport(
-  'Investigation of FlashAttention, Adaptive Learning Rates, and Multi-Agent Reasoning Handoffs in Transformer Architectures',
-  [
-    {
-      id: 'doc-init-1',
-      name: 'attention_is_all_you_need.pdf',
-      size: 562000,
-      type: 'pdf',
-      uploadedAt: new Date(Date.now() - 7200000).toISOString(),
-    },
-  ]
-);
+const INITIAL_REPORT: ResearchReport = {
+  id: 'rep-mock-1',
+  title: 'Investigation of FlashAttention...',
+  generatedAt: new Date().toISOString(),
+  query: 'Investigation of FlashAttention, Adaptive Learning Rates...',
+  citations: [],
+  executiveSummary: 'This is a mock initial report for demonstration.',
+  methodology: '',
+  findings: [],
+  comparisons: [],
+  limitations: ''
+};
 
 const DEFAULT_SESSIONS: ResearchSession[] = [
   {
@@ -151,9 +153,15 @@ export function useResearchEnvironment() {
     });
   };
 
-  const sendResearchQuery = async (queryText: string, attachedFiles: AttachedDocument[] = []) => {
+  const sendResearchQuery = async (
+    queryText: string,
+    attachedFiles: AttachedDocument[] = [],
+    planOverride?: QueryPlan,
+  ) => {
     if (!queryText.trim() && attachedFiles.length === 0) return;
     if (isProcessing) return;
+
+    const plan = planOverride ?? classifyQuery(queryText, attachedFiles.length);
 
     const userMessage: ResearchMessage = {
       id: generateId('msg'),
@@ -188,15 +196,36 @@ export function useResearchEnvironment() {
     setIsProcessing(true);
 
     try {
-      setPipelineStepMessage('Dispatching to orchestrator...');
-      
+      setPipelineStepMessage(
+        plan.intent === 'chat' ? 'Replying directly...' : `Routing as: ${plan.label}...`,
+      );
+
+      // Small talk: answer directly — no sub-agents, no report, no backend call.
+      if (plan.intent === 'chat') {
+        await new Promise(r => setTimeout(r, planDurationMs(plan) + 200));
+        const chatMessage: ResearchMessage = {
+          id: generateId('msg'),
+          role: 'assistant',
+          content: plan.reply ?? 'Hi! How can I help with your research?',
+          timestamp: new Date().toISOString(),
+        };
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? { ...s, messages: [...s.messages, chatMessage], status: 'completed' }
+              : s,
+          ),
+        );
+        return;
+      }
+
       // Check connection mode
       const config = aresApi.getConfig();
       
       if (config.mode === 'simulator') {
-        // Simulator mode - use mock data after short delay
-        await new Promise(r => setTimeout(r, 2000));
-        const generatedReport = buildSynthesizedReport(queryText, attachedFiles);
+        // Simulator mode - wait for the planned agents to finish, then use mock data
+        await new Promise(r => setTimeout(r, planDurationMs(plan) + 300));
+        const generatedReport = await buildSynthesizedReport(queryText, attachedFiles, plan.intent);
 
         const assistantMessage: ResearchMessage = {
           id: generateId('msg'),
@@ -258,49 +287,7 @@ The research synthesis is available below.`,
       }
 
       // Generate report (for now still using mock — will be replaced when Drafter is built)
-      const generatedReport = buildSynthesizedReport(queryText, attachedFiles);
-
-      // **NEW: If in WebSocket mode, call Groq API for real report generation**
-      if (config.mode === 'websocket') {
-        try {
-          const reportResp = await fetch('http://localhost:8000/api/generate-report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              research_brief: queryText,
-              paper_url: attachedFiles[0]?.name || null,
-            }),
-          });
-
-          if (reportResp.ok) {
-            const reportData = await reportResp.json();
-            if (reportData.success && reportData.report) {
-              // Override with Groq-generated report
-              generatedReport.title = reportData.report.title || generatedReport.title;
-              generatedReport.executiveSummary = reportData.report.executive_summary || generatedReport.executiveSummary;
-              generatedReport.methodology = reportData.report.methodology || generatedReport.methodology;
-              generatedReport.findings = reportData.report.findings || generatedReport.findings;
-              
-              // Parse comparisons from Groq output
-              if (reportData.report.comparisons && Array.isArray(reportData.report.comparisons)) {
-                generatedReport.comparisons = reportData.report.comparisons.map((c: string) => {
-                  const parts = c.split('|').map(p => p.trim());
-                  return {
-                    baseline: parts[0] || '',
-                    proposed: parts[1] || '',
-                    delta: parts[2] || ''
-                  };
-                });
-              }
-              
-              generatedReport.limitations = reportData.report.limitations || generatedReport.limitations;
-            }
-          }
-        } catch (groqErr) {
-          console.warn('Groq report generation failed, using template:', groqErr);
-          // Continue with template report
-        }
-      }
+      const generatedReport = await buildSynthesizedReport(queryText, attachedFiles, plan.intent);
 
       const assistantMessage: ResearchMessage = {
         id: generateId('msg'),

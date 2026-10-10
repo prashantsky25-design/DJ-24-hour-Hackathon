@@ -154,8 +154,6 @@ def generate_report(payload: OrchestrateRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
-
-
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """
