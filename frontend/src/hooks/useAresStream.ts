@@ -129,6 +129,22 @@ export function useAresStream() {
 
         const nextEpoch = prev.currentEpoch < prev.totalEpochs ? prev.currentEpoch + 1 : prev.totalEpochs;
 
+        // Stop simulation when training completes
+        if (nextEpoch >= prev.totalEpochs) {
+          setTimeout(() => {
+            setExperiment(p => ({ ...p, status: 'completed' }));
+            // Add completion log
+            setLogs(l => [...l, {
+              id: String(Date.now()),
+              timestamp: new Date().toLocaleTimeString(),
+              source: 'system',
+              level: 'info',
+              message: '✓ Training complete! Final metrics: Val Loss=0.195 | Accuracy=94.3%',
+            }]);
+          }, 1000);
+          return prev;
+        }
+
         // Add a simulated metric point if epoch progressed
         if (nextEpoch > prev.currentEpoch) {
           const lastMetric = metrics[metrics.length - 1];
