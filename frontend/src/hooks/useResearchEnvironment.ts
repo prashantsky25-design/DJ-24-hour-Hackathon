@@ -260,6 +260,48 @@ The research synthesis is available below.`,
       // Generate report (for now still using mock — will be replaced when Drafter is built)
       const generatedReport = buildSynthesizedReport(queryText, attachedFiles);
 
+      // **NEW: If in WebSocket mode, call Groq API for real report generation**
+      if (config.mode === 'websocket') {
+        try {
+          const reportResp = await fetch('http://localhost:8000/api/generate-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              research_brief: queryText,
+              paper_url: attachedFiles[0]?.name || null,
+            }),
+          });
+
+          if (reportResp.ok) {
+            const reportData = await reportResp.json();
+            if (reportData.success && reportData.report) {
+              // Override with Groq-generated report
+              generatedReport.title = reportData.report.title || generatedReport.title;
+              generatedReport.executiveSummary = reportData.report.executive_summary || generatedReport.executiveSummary;
+              generatedReport.methodology = reportData.report.methodology || generatedReport.methodology;
+              generatedReport.findings = reportData.report.findings || generatedReport.findings;
+              
+              // Parse comparisons from Groq output
+              if (reportData.report.comparisons && Array.isArray(reportData.report.comparisons)) {
+                generatedReport.comparisons = reportData.report.comparisons.map((c: string) => {
+                  const parts = c.split('|').map(p => p.trim());
+                  return {
+                    baseline: parts[0] || '',
+                    proposed: parts[1] || '',
+                    delta: parts[2] || ''
+                  };
+                });
+              }
+              
+              generatedReport.limitations = reportData.report.limitations || generatedReport.limitations;
+            }
+          }
+        } catch (groqErr) {
+          console.warn('Groq report generation failed, using template:', groqErr);
+          // Continue with template report
+        }
+      }
+
       const assistantMessage: ResearchMessage = {
         id: generateId('msg'),
         role: 'assistant',

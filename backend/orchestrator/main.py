@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from agent_spawner import execute_task_pipeline, session_store
 from radar import start_arxiv_radar_loop
 from task_parser import decompose_research_brief
+from report_drafter import generate_research_report
 
 
 # WebSocket connection manager
@@ -136,6 +137,23 @@ def get_logs(session_id: str):
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@app.post("/api/generate-report")
+def generate_report(payload: OrchestrateRequest):
+    """
+    Generate a research report using Groq API based on the query.
+    Called by frontend after demo completes.
+    """
+    try:
+        report = generate_research_report(payload.research_brief, payload.paper_url)
+        return {
+            "success": True,
+            "report": report,
+            "query": payload.research_brief
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
 
 
 @app.websocket("/ws/{session_id}")

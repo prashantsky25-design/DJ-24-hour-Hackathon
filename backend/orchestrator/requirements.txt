@@ -6,3 +6,4 @@ langchain-openai
 langchain-anthropic
 httpx
 requests
+groq>=0.11.0
