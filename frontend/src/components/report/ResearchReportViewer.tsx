@@ -12,6 +12,7 @@ import {
   Layers,
   Sparkles,
 } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
 interface ResearchReportViewerProps {
   report: ResearchReport;
@@ -218,6 +219,38 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
           ))}
         </ul>
       </div>
+
+      {/* Visual Representation (Optional) */}
+      {report.visualData && (
+        <div className="mt-6 space-y-2">
+          <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-indigo-500">
+            Visual Representation: {report.visualData.title}
+          </h2>
+          <div className="w-full h-64 mt-4 bg-white rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              {report.visualData.type === 'bar' ? (
+                <BarChart data={report.visualData.data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" fontSize={10} />
+                  <YAxis fontSize={10} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              ) : (
+                <PieChart>
+                  <Pie data={report.visualData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#82ca9d" label>
+                    {report.visualData.data.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={['#8884d8', '#83a6ed', '#8dd1e1', '#82ca9d', '#a4de6c', '#d0ed57'][index % 6]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Section 4: Quantitative Comparisons Table */}
       {report.comparisons && report.comparisons.length > 0 && (

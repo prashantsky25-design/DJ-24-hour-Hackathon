@@ -283,6 +283,7 @@ The intent classification is: "{intent}"
 Attached documents: {', '.join(payload.documents) if payload.documents else 'None'}
 
 Draft a highly professional, accurate, and relevant report based on the query. If the query is about "longitude and latitude", the report should be about geography and coordinates, NOT machine learning. If the query is about ML, it should be about ML.
+Crucially, ensure you generate `visualData` based on real, accurate, and relevant statistical data (e.g., actual world AQI measurements, real metrics) to provide an authentic data visualization.
 
 Respond ONLY with a valid JSON object matching this schema exactly (no markdown formatting, no comments):
 {{
@@ -293,43 +294,55 @@ Respond ONLY with a valid JSON object matching this schema exactly (no markdown 
   "comparisons": [
     {{"baseline": "Baseline value", "proposed": "Proposed value", "delta": "Difference"}}
   ],
-  "limitations": "A paragraph on limitations of this research."
+  "limitations": "A paragraph on limitations of this research.",
+  "visualData": {{
+    "title": "Chart Title",
+    "type": "bar or pie",
+    "data": [
+      {{"name": "Label 1", "value": 10}},
+      {{"name": "Label 2", "value": 20}}
+    ]
+  }}
 }}
 """
-    
-    # Try using google-genai
-    api_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
-    if api_key:
+    # Use Elevate API (Hackathon Endpoint)
+    elevate_api_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
+    if elevate_api_key and elevate_api_key.startswith("elev_"):
         try:
-            from google import genai
-            from google.genai import types
-            
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    response_mime_type="application/json"
-                )
-            )
-            
-            result_json = response.text
-            if result_json.startswith("```json"):
-                result_json = result_json[7:]
-            if result_json.startswith("```"):
-                result_json = result_json[3:]
-            if result_json.endswith("```"):
-                result_json = result_json[:-3]
-            result_json = result_json.strip()
-            
-            data = json.loads(result_json)
-            return data
-            
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {elevate_api_key}",
+                "Content-Type": "application/json"
+            }
+            body = {
+                "model": "gpt-5-mini",
+                "max_completion_tokens": 4000,
+                "messages": [
+                    {"role": "system", "content": "You are a helpful JSON-producing assistant."},
+                    {"role": "user", "content": prompt}
+                ]
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post("https://elevate1-0.vercel.app/api/ai", headers=headers, json=body, timeout=30.0)
+                resp.raise_for_status()
+                # Attempt to parse OpenAI-style response
+                result_json = resp.json()["choices"][0]["message"]["content"]
+                
+                # Clean markdown blocks if present
+                if result_json.startswith("```json"):
+                    result_json = result_json[7:]
+                if result_json.startswith("```"):
+                    result_json = result_json[3:]
+                if result_json.endswith("```"):
+                    result_json = result_json[:-3]
+                result_json = result_json.strip()
+                
+                data = json.loads(result_json)
+                return data
         except Exception as exc:
             safe_error = repr(exc).encode('ascii', 'replace').decode('ascii')
-            log.warning("api.report_generate_gemini_error", error=safe_error)
-    
+            log.warning("api.report_generate_elevate_error", error=safe_error)
+            
     # Fallback to Groq using httpx directly
     groq_api_key = settings.groq_api_key or os.getenv("GROQ_API_KEY")
     if groq_api_key:

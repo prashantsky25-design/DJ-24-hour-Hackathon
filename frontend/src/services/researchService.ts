@@ -91,6 +91,7 @@ export async function buildSynthesizedReport(
         findings: data.findings || [],
         comparisons: data.comparisons || [],
         limitations: data.limitations || '',
+        visualData: data.visualData,
       };
     } else {
       console.error('Failed to generate report from backend:', await response.text());

@@ -41,18 +41,21 @@ const EXPERIMENT_RE =
 
 const PAPER_RE = /\b(paper|pdf|arxiv|doi|attached|document|this study)\b|https?:\/\//i;
 
+const RESEARCH_RE = /\b(what|how|why|paper|research|explain|code|summarize|detail|analyze|report|review|longitude|latitude)\b/i;
+
 export function classifyQuery(query: string, attachmentCount = 0): QueryPlan {
   const text = query.trim();
   const words = text.split(/\s+/).filter(Boolean);
   const hasExperiment = EXPERIMENT_RE.test(text);
   const hasPaper = attachmentCount > 0 || PAPER_RE.test(text);
+  const hasResearch = RESEARCH_RE.test(text);
 
-  // Small talk: greeting or very short message with no research signal.
+  // Small talk: greeting or short message with no research signal, or doesn't match any research keyword
   const looksLikeChat =
     !hasExperiment &&
     !hasPaper &&
     attachmentCount === 0 &&
-    (GREETING_RE.test(text) || words.length <= 2);
+    (GREETING_RE.test(text) || words.length <= 2 || !hasResearch);
 
   if (looksLikeChat) {
     const asksCapabilities = /what can you do|who are you|help/i.test(text);
