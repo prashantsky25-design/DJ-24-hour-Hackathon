@@ -11,6 +11,7 @@ import {
   Wifi,
   WifiOff,
   Activity,
+  Info,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -24,6 +25,7 @@ interface HeaderProps {
   onTogglePauseResume: () => void;
   onOpenConnectionModal: () => void;
   onOpenMobileSidebar: () => void;
+  onOpenImplementationDetails?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   onTogglePauseResume,
   onOpenConnectionModal,
   onOpenMobileSidebar,
+  onOpenImplementationDetails,
 }) => {
   const isRunning = experiment.status === 'running';
   const isHalted  = experiment.status === 'halted';
@@ -98,6 +101,33 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* ── Right controls ── */}
       <div className="flex items-center gap-2 shrink-0">
+
+        {/* Implementation Details Button */}
+        {onOpenImplementationDetails && (
+          <button
+            onClick={onOpenImplementationDetails}
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-colors font-medium"
+            style={{
+              backgroundColor: 'var(--surface-secondary)',
+              borderColor: 'var(--border)',
+              color: 'var(--text-secondary)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.backgroundColor = 'var(--hover)';
+              e.currentTarget.style.borderColor = '#06b6d4';
+              e.currentTarget.style.color = '#06b6d4';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.backgroundColor = 'var(--surface-secondary)';
+              e.currentTarget.style.borderColor = 'var(--border)';
+              e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
+            title="View Production Implementation Details"
+          >
+            <Info className="w-3 h-3" />
+            <span>Implementation</span>
+          </button>
+        )}
 
         {/* Connection badge */}
         <button

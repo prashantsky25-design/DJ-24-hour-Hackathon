@@ -259,30 +259,32 @@ The research synthesis is available below.`,
       
       setPipelineStepMessage(`Session ${sessionId} started. Connecting to live stream...`);
       
-      // WebSocket will stream updates via useAresStream hook
-      // We poll the status endpoint as a fallback
+      // WebSocket streams updates via useAresStream hook.
+      // Poll /api/status as a fallback until pipeline_complete arrives via WS.
       let attempts = 0;
-      const maxAttempts = 60;  // 5 minutes max
-      
+      const maxAttempts = 60; // 5 minutes max (60 × 5s)
+
       while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 5000));  // Poll every 5s
-        
+        await new Promise(r => setTimeout(r, 5000));
+
         try {
           const statusResp = await fetch(`http://localhost:8000/api/status/${sessionId}`);
           if (!statusResp.ok) break;
-          
+
           const statusData = await statusResp.json();
+          const agentList: string[] = statusData.agent_tasks ?? [];
           setPipelineStepMessage(
-            `${statusData.active_agent} running... (${statusData.current_task_index + 1}/${statusData.task_nodes.length} tasks)`
+            `Running ${statusData.intent ?? 'pipeline'} — agents: ${agentList.join(', ')}`
           );
-          
-          if (statusData.status === 'completed' || statusData.status === 'stopped') {
+
+          if (statusData.status === 'completed' || statusData.status === 'stopped' ||
+              statusData.status === 'failed'    || statusData.status === 'error') {
             break;
           }
         } catch (pollErr) {
           console.warn('Status poll failed:', pollErr);
         }
-        
+
         attempts++;
       }
 
