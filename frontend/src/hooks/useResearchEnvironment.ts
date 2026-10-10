@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ResearchSession, AttachedDocument, ResearchReport, ResearchMessage } from '../types/research';
 import { buildSynthesizedReport } from '../services/researchService';
+import { aresApi } from '../services/apiService';
 
 const SESSIONS_STORAGE_KEY = 'ps3_research_sessions';
 const ACTIVE_SESSION_STORAGE_KEY = 'ps3_active_session_id';
@@ -189,43 +190,68 @@ export function useResearchEnvironment() {
     try {
       setPipelineStepMessage('Dispatching to orchestrator...');
       
-      // Call real backend orchestrator API
-      const response = await fetch('http://localhost:8000/api/orchestrate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          research_brief: queryText,
-          paper_url: attachedFiles[0]?.name || null,  // TODO: handle real file uploads
-        }),
-      });
+      // Check connection mode
+      const config = aresApi.getConfig();
+      
+      if (config.mode === 'simulator') {
+        // Simulator mode - use mock data after short delay
+        await new Promise(r => setTimeout(r, 2000));
+        const generatedReport = buildSynthesizedReport(queryText, attachedFiles);
 
-      if (!response.ok) {
-        throw new Error(`Orchestrator returned ${response.status}`);
+        const assistantMessage: ResearchMessage = {
+          id: generateId('msg'),
+          role: 'assistant',
+          content: `Multi-agent pipeline completed (simulator mode): "${queryText}".
+
+The research synthesis is available below.`,
+          timestamp: new Date().toISOString(),
+          reportId: generatedReport.id,
+        };
+
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id === activeSessionId) {
+              return {
+                ...s,
+                report: generatedReport,
+                messages: [...s.messages, assistantMessage],
+                status: 'completed',
+              };
+            }
+            return s;
+          })
+        );
+        return;
       }
 
-      const result = await response.json();
-      const sessionId = result.session_id;
+      // Real backend mode - call orchestrator API
+      const result = await aresApi.orchestrate(queryText, attachedFiles[0]?.name);
+      const sessionId = result.sessionId;
       
-      setPipelineStepMessage(`Session ${sessionId} started. Agents executing...`);
+      setPipelineStepMessage(`Session ${sessionId} started. Connecting to live stream...`);
       
-      // TODO: Connect to WebSocket for real-time updates
-      // For now, poll status endpoint
+      // WebSocket will stream updates via useAresStream hook
+      // We poll the status endpoint as a fallback
       let attempts = 0;
       const maxAttempts = 60;  // 5 minutes max
       
       while (attempts < maxAttempts) {
         await new Promise(r => setTimeout(r, 5000));  // Poll every 5s
         
-        const statusResp = await fetch(`http://localhost:8000/api/status/${sessionId}`);
-        if (!statusResp.ok) break;
-        
-        const statusData = await statusResp.json();
-        setPipelineStepMessage(
-          `${statusData.active_agent} running... (${statusData.current_task_index + 1}/${statusData.task_nodes.length} tasks)`
-        );
-        
-        if (statusData.status === 'completed' || statusData.status === 'stopped') {
-          break;
+        try {
+          const statusResp = await fetch(`http://localhost:8000/api/status/${sessionId}`);
+          if (!statusResp.ok) break;
+          
+          const statusData = await statusResp.json();
+          setPipelineStepMessage(
+            `${statusData.active_agent} running... (${statusData.current_task_index + 1}/${statusData.task_nodes.length} tasks)`
+          );
+          
+          if (statusData.status === 'completed' || statusData.status === 'stopped') {
+            break;
+          }
+        } catch (pollErr) {
+          console.warn('Status poll failed:', pollErr);
         }
         
         attempts++;
@@ -240,8 +266,8 @@ export function useResearchEnvironment() {
         content: `Multi-agent pipeline completed for: "${queryText}".
 
 Session ID: ${sessionId}
-Agents deployed: ${result.task_nodes?.length || 0}
-Status: ${result.status}
+Agents deployed: ${result.taskNodes?.length || 0}
+Status: Completed
 
 The research synthesis is available below.`,
         timestamp: new Date().toISOString(),

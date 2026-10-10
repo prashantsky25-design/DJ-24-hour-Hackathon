@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ConnectionConfig } from '../../types/events';
-import { X, Network, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, Network, CheckCircle2, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
+import { aresApi } from '../../services/apiService';
 
 interface ConnectionModalProps {
   isOpen: boolean;
@@ -23,6 +24,28 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [orchestratorUrl, setOrchestratorUrl] = useState(config.orchestratorUrl);
   const [sandboxApiUrl, setSandboxApiUrl] = useState(config.sandboxApiUrl);
   const [autoReconnect, setAutoReconnect] = useState(config.autoReconnect);
+  const [healthStatus, setHealthStatus] = useState<{ orchestrator: boolean; sandbox: boolean } | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+
+  // Check backend health when modal opens
+  useEffect(() => {
+    if (isOpen && mode !== 'simulator') {
+      checkBackendHealth();
+    }
+  }, [isOpen, mode]);
+
+  const checkBackendHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const status = await aresApi.checkHealth();
+      setHealthStatus(status);
+    } catch (err) {
+      console.error('Health check failed:', err);
+      setHealthStatus({ orchestrator: false, sandbox: false });
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -161,25 +184,49 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
           </div>
 
           {/* Status banner */}
-          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              {mode === 'simulator' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              ) : isConnected ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-amber-400" />
+          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {checkingHealth ? (
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                ) : mode === 'simulator' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : healthStatus && (healthStatus.orchestrator || healthStatus.sandbox) ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                )}
+                <span className="text-slate-300">
+                  {mode === 'simulator'
+                    ? 'Local Simulator Active (Zero backend setup needed)'
+                    : checkingHealth
+                    ? 'Checking backend services...'
+                    : healthStatus && (healthStatus.orchestrator || healthStatus.sandbox)
+                    ? 'Backend services detected'
+                    : 'Backend not detected - using local fallback'}
+                </span>
+              </div>
+              {mode !== 'simulator' && !checkingHealth && (
+                <button
+                  onClick={checkBackendHealth}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-mono flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  recheck
+                </button>
               )}
-              <span className="text-slate-300">
-                {mode === 'simulator'
-                  ? 'Local Simulator Active (Zero backend setup needed)'
-                  : isConnected
-                  ? 'Connected to live stream'
-                  : 'Backend not detected - using local fallback'}
-              </span>
             </div>
-            {mode !== 'simulator' && (
-              <span className="text-[10px] text-slate-500 font-mono">auto-retry on</span>
+
+            {/* Backend health details */}
+            {mode !== 'simulator' && healthStatus && (
+              <div className="flex gap-4 text-[10px] font-mono pl-6">
+                <span className={healthStatus.orchestrator ? 'text-emerald-400' : 'text-red-400'}>
+                  {healthStatus.orchestrator ? '✓' : '✗'} Orchestrator :8000
+                </span>
+                <span className={healthStatus.sandbox ? 'text-emerald-400' : 'text-red-400'}>
+                  {healthStatus.sandbox ? '✓' : '✗'} Sandbox :8001
+                </span>
+              </div>
             )}
           </div>
         </div>
