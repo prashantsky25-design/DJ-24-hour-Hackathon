@@ -1,4 +1,5 @@
 import { ResearchReport, CitationReference, AttachedDocument } from '../types/research';
+import type { QueryIntent } from './intentRouter';
 
 export const BENCHMARK_CITATIONS: CitationReference[] = [
   {
@@ -48,45 +49,79 @@ export const BENCHMARK_CITATIONS: CitationReference[] = [
   },
 ];
 
-export function buildSynthesizedReport(
+export async function buildSynthesizedReport(
   query: string,
-  documents: AttachedDocument[] = []
-): ResearchReport {
-  const docSummary = documents.length > 0
-    ? ` Ingestion completed for ${documents.length} attached document(s): ${documents.map((d) => `"${d.name}"`).join(', ')}.`
-    : ' No external documents attached; baseline corpus and academic index utilized.';
-
-  const isOptimization = query.toLowerCase().includes('loss') || query.toLowerCase().includes('train') || query.toLowerCase().includes('model');
-
-  return {
+  documents: AttachedDocument[] = [],
+  intent: QueryIntent = 'experiment'
+): Promise<ResearchReport> {
+  const base = {
     id: `rep-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
-    title: `Investigation on ${query.slice(0, 50)}${query.length > 50 ? '...' : ''}: Multi-Agent Synthesis & Analysis`,
+    title: `Investigation on ${query.slice(0, 50)}${query.length > 50 ? '...' : ''}`,
     generatedAt: new Date().toISOString(),
     query,
-    executiveSummary:
-      `This report synthesizes empirical investigations initiated by the user inquiry regarding "${query}". An autonomous dynamic team of specialized AI agents—spanning literature reconnaissance, hypothesis formulation, methodological criticism, and drafting—was deployed to formulate a structured evaluation.${docSummary} The resulting synthesis demonstrates substantial convergence between proposed theoretical formulations and observed performance characteristics.`,
-    methodology:
-      `The research protocol followed a closed-loop multi-agent workflow: (1) The User node injected the research specification and constraints; (2) The Orchestrator decomposed the inquiry into domain subtasks; (3) The Literature Scout queried academic corpora [1, 2] and parsed local attachments; (4) The Hypothesis Engine developed testable parameter variations; (5) The Experiment Critic audited validity bounds according to iterative refinement protocols [5]; (6) The Report Drafter synthesized findings and compiled formal citations before routing the final deliverable back through the delivery bus to the User.`,
-    findings: [
-      `Literature reconciliation confirms that incorporating chain-of-thought verification [3] reduces non-grounded divergence by approximately 34.2% across domain-specific queries.`,
-      `Document embeddings ingested from attached context files demonstrated high semantic alignment with recent peer-reviewed baselines [2, 4], eliminating superficial hallucinatory artifacts.`,
-      `Dynamic agent task handoffs achieved low-latency synchronization with zero deadlock during critical hypothesis decomposition phases.`,
-      `Self-refinement feedback loops [5] caught two critical boundary condition violations prior to synthesis consolidation.`,
-    ],
-    comparisons: isOptimization
-      ? [
-          { baseline: 'Validation Loss: 1.09', proposed: 'Validation Loss: 0.50', delta: '-54.1% (Improved)' },
-          { baseline: 'GPU VRAM Peak: 15.4 GB', proposed: 'GPU VRAM Peak: 9.1 GB', delta: '-40.9% (Optimized)' },
-          { baseline: 'Throughput: 412 smp/s', proposed: 'Throughput: 798 smp/s', delta: '+93.7% (Faster)' },
-          { baseline: 'Top-1 Accuracy: 83.2%', proposed: 'Top-1 Accuracy: 90.9%', delta: '+7.7% absolute' },
-        ]
-      : [
-          { baseline: 'Single-Pass Prompting Accuracy: 71.4%', proposed: 'Multi-Agent Refined Accuracy: 89.6%', delta: '+18.2% (Higher)' },
-          { baseline: 'Citation Grounding Rate: 62.0%', proposed: 'Citation Grounding Rate: 96.5%', delta: '+34.5% (Verified)' },
-          { baseline: 'Inquiry Latency: 12.4s', proposed: 'Decomposed Pipeline Latency: 4.8s', delta: '-61.3% (Speedup)' },
-        ],
-    limitations:
-      `Observations are subject to bounded context windows and document resolution constraints. While empirical convergence was verified, real-world generalization across heterogeneous hardware clusters warrants continuous integration testing. Further work will expand automated benchmark suite execution.`,
     citations: BENCHMARK_CITATIONS,
+    executiveSummary: '',
+    methodology: '',
+    findings: [],
+    comparisons: [],
+    limitations: '',
+  };
+
+  try {
+    const docNames = documents.map(d => d.name);
+    const response = await fetch('http://localhost:8001/api/report/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        documents: docNames,
+        intent
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        ...base,
+        title: data.title || base.title,
+        executiveSummary: data.executiveSummary || '',
+        methodology: data.methodology || '',
+        findings: data.findings || [],
+        comparisons: data.comparisons || [],
+        limitations: data.limitations || '',
+      };
+    } else {
+      console.error('Failed to generate report from backend:', await response.text());
+    }
+  } catch (error) {
+    console.error('Error generating report:', error);
+  }
+
+  // Fallback if the API call fails
+  const docSummary = documents.length > 0
+    ? ` Ingestion completed for ${documents.length} attached document(s).`
+    : ' No external documents attached.';
+
+  if (intent === 'literature' || intent === 'paper') {
+    return {
+      ...base,
+      title: `${intent === 'paper' ? 'Paper Analysis' : 'Literature Review'}: ${query.slice(0, 50)}`,
+      executiveSummary: `This review addresses the inquiry "${query}".${docSummary} Only the required agents were engaged; no sandbox experiments were run.`,
+      methodology: `(1) Orchestrator classified request; (2) Paper Reader gathered sources; (3) Drafter compiled summary.`,
+      findings: [`The request was answered from the literature and attached material only.`],
+      comparisons: [],
+      limitations: `This is a text-only synthesis, generated as a fallback due to an API error.`,
+    };
+  }
+
+  return {
+    ...base,
+    executiveSummary: `This report synthesizes empirical investigations initiated by the user inquiry regarding "${query}".${docSummary} (Fallback report due to API error)`,
+    methodology: `The research protocol followed a closed-loop multi-agent workflow.`,
+    findings: [`API generation failed, showing fallback data.`],
+    comparisons: [],
+    limitations: `Observations are subject to bounded context windows and document resolution constraints.`,
   };
 }

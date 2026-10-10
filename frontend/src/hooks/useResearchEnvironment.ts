@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ResearchSession, AttachedDocument, ResearchReport, ResearchMessage } from '../types/research';
 import { buildSynthesizedReport } from '../services/researchService';
+import { aresApi } from '../services/apiService';
+import { classifyQuery, QueryPlan } from '../services/intentRouter';
+import { planDurationMs } from './usePipelineSimulator';
 
 const SESSIONS_STORAGE_KEY = 'ps3_research_sessions';
 const ACTIVE_SESSION_STORAGE_KEY = 'ps3_active_session_id';
@@ -9,18 +12,18 @@ function generateId(prefix = 'sess') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 }
 
-const INITIAL_REPORT = buildSynthesizedReport(
-  'Investigation of FlashAttention, Adaptive Learning Rates, and Multi-Agent Reasoning Handoffs in Transformer Architectures',
-  [
-    {
-      id: 'doc-init-1',
-      name: 'attention_is_all_you_need.pdf',
-      size: 562000,
-      type: 'pdf',
-      uploadedAt: new Date(Date.now() - 7200000).toISOString(),
-    },
-  ]
-);
+const INITIAL_REPORT: ResearchReport = {
+  id: 'rep-mock-1',
+  title: 'Investigation of FlashAttention...',
+  generatedAt: new Date().toISOString(),
+  query: 'Investigation of FlashAttention, Adaptive Learning Rates...',
+  citations: [],
+  executiveSummary: 'This is a mock initial report for demonstration.',
+  methodology: '',
+  findings: [],
+  comparisons: [],
+  limitations: ''
+};
 
 const DEFAULT_SESSIONS: ResearchSession[] = [
   {
@@ -150,9 +153,15 @@ export function useResearchEnvironment() {
     });
   };
 
-  const sendResearchQuery = async (queryText: string, attachedFiles: AttachedDocument[] = []) => {
+  const sendResearchQuery = async (
+    queryText: string,
+    attachedFiles: AttachedDocument[] = [],
+    planOverride?: QueryPlan,
+  ) => {
     if (!queryText.trim() && attachedFiles.length === 0) return;
     if (isProcessing) return;
+
+    const plan = planOverride ?? classifyQuery(queryText, attachedFiles.length);
 
     const userMessage: ResearchMessage = {
       id: generateId('msg'),
@@ -186,33 +195,110 @@ export function useResearchEnvironment() {
 
     setIsProcessing(true);
 
-    // Multi-Agent Pipeline Simulation Steps with authentic latency
     try {
-      setPipelineStepMessage('User node dispatched query. Orchestrator analyzing problem scope...');
-      await new Promise((r) => setTimeout(r, 900));
+      setPipelineStepMessage(
+        plan.intent === 'chat' ? 'Replying directly...' : `Routing as: ${plan.label}...`,
+      );
 
-      setPipelineStepMessage('Literature Scout scanning attached context & retrieving citations [1, 2]...');
-      await new Promise((r) => setTimeout(r, 1100));
+      // Small talk: answer directly — no sub-agents, no report, no backend call.
+      if (plan.intent === 'chat') {
+        await new Promise(r => setTimeout(r, planDurationMs(plan) + 200));
+        const chatMessage: ResearchMessage = {
+          id: generateId('msg'),
+          role: 'assistant',
+          content: plan.reply ?? 'Hi! How can I help with your research?',
+          timestamp: new Date().toISOString(),
+        };
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? { ...s, messages: [...s.messages, chatMessage], status: 'completed' }
+              : s,
+          ),
+        );
+        return;
+      }
 
-      setPipelineStepMessage('Hypothesis Engine & Experiment Critic verifying methodology constraints [3, 5]...');
-      await new Promise((r) => setTimeout(r, 1100));
+      // Check connection mode
+      const config = aresApi.getConfig();
+      
+      if (config.mode === 'simulator') {
+        // Simulator mode - wait for the planned agents to finish, then use mock data
+        await new Promise(r => setTimeout(r, planDurationMs(plan) + 300));
+        const generatedReport = await buildSynthesizedReport(queryText, attachedFiles, plan.intent);
 
-      setPipelineStepMessage('Report Drafter synthesizing executive summary, findings, and formal bibliography...');
-      await new Promise((r) => setTimeout(r, 1000));
+        const assistantMessage: ResearchMessage = {
+          id: generateId('msg'),
+          role: 'assistant',
+          content: `Multi-agent pipeline completed (simulator mode): "${queryText}".
 
-      const generatedReport = buildSynthesizedReport(queryText, attachedFiles);
+The research synthesis is available below.`,
+          timestamp: new Date().toISOString(),
+          reportId: generatedReport.id,
+        };
+
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id === activeSessionId) {
+              return {
+                ...s,
+                report: generatedReport,
+                messages: [...s.messages, assistantMessage],
+                status: 'completed',
+              };
+            }
+            return s;
+          })
+        );
+        return;
+      }
+
+      // Real backend mode - call orchestrator API
+      const result = await aresApi.orchestrate(queryText, attachedFiles[0]?.name);
+      const sessionId = result.sessionId;
+      
+      setPipelineStepMessage(`Session ${sessionId} started. Connecting to live stream...`);
+      
+      // WebSocket will stream updates via useAresStream hook
+      // We poll the status endpoint as a fallback
+      let attempts = 0;
+      const maxAttempts = 60;  // 5 minutes max
+      
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 5000));  // Poll every 5s
+        
+        try {
+          const statusResp = await fetch(`http://localhost:8000/api/status/${sessionId}`);
+          if (!statusResp.ok) break;
+          
+          const statusData = await statusResp.json();
+          setPipelineStepMessage(
+            `${statusData.active_agent} running... (${statusData.current_task_index + 1}/${statusData.task_nodes.length} tasks)`
+          );
+          
+          if (statusData.status === 'completed' || statusData.status === 'stopped') {
+            break;
+          }
+        } catch (pollErr) {
+          console.warn('Status poll failed:', pollErr);
+        }
+        
+        attempts++;
+      }
+
+      // Generate report (for now still using mock — will be replaced when Drafter is built)
+      const generatedReport = await buildSynthesizedReport(queryText, attachedFiles, plan.intent);
 
       const assistantMessage: ResearchMessage = {
         id: generateId('msg'),
         role: 'assistant',
-        content: `I have completed the multi-agent empirical synthesis for: "${queryText}".
+        content: `Multi-agent pipeline completed for: "${queryText}".
 
-Key highlights:
-- Evaluated against peer-reviewed baselines [1, 2, 3].
-- Document context ingested (${attachedFiles.length} file${attachedFiles.length === 1 ? '' : 's'}).
-- Formal research report synthesized with ${generatedReport.citations.length} academic citations.
+Session ID: ${sessionId}
+Agents deployed: ${result.taskNodes?.length || 0}
+Status: Completed
 
-You can inspect the complete report with comparative tables below or export a formatted PDF anytime.`,
+The research synthesis is available below.`,
         timestamp: new Date().toISOString(),
         reportId: generatedReport.id,
       };
@@ -225,6 +311,27 @@ You can inspect the complete report with comparative tables below or export a fo
               report: generatedReport,
               messages: [...s.messages, assistantMessage],
               status: 'completed',
+            };
+          }
+          return s;
+        })
+      );
+    } catch (error) {
+      console.error('Research query failed:', error);
+      const errorMessage: ResearchMessage = {
+        id: generateId('msg'),
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Make sure the orchestrator (port 8000) and sandbox (port 8001) are running.`,
+        timestamp: new Date().toISOString(),
+      };
+      
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id === activeSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, errorMessage],
+              status: 'error',
             };
           }
           return s;

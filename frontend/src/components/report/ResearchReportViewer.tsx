@@ -48,11 +48,12 @@ ${report.methodology}
 ## 3. Empirical Findings & Observations
 ${report.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
-## 4. Quantitative Comparisons
-| Metric / Parameter | Baseline Target | Proposed Result | Observed Delta |
-| --- | --- | --- | --- |
+${report.comparisons.length > 0 ? `## 4. Quantitative Comparisons
+| Baseline | Proposed | Observed Delta |
+| --- | --- | --- |
 ${report.comparisons.map((c) => `| ${c.baseline} | ${c.proposed} | ${c.delta} |`).join('\n')}
 
+` : ''}
 ## 5. Limitations
 ${report.limitations}
 

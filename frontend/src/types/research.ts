@@ -52,6 +52,6 @@ export interface ResearchSession {
   documents: AttachedDocument[];
   messages: ResearchMessage[];
   report?: ResearchReport;
-  status: 'idle' | 'orchestrating' | 'researching' | 'synthesizing' | 'completed' | 'halted';
+  status: 'idle' | 'orchestrating' | 'researching' | 'synthesizing' | 'completed' | 'halted' | 'error';
   activeAgentId?: string;
 }

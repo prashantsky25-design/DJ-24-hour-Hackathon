@@ -8,12 +8,13 @@ export class AresApiService {
   private listeners: Set<EventCallback> = new Set();
   private isConnected = false;
   private reconnectTimer: number | null = null;
+  private sessionId: string | null = null;
   private config: ConnectionConfig = {
-    mode: 'simulator',
+    mode: 'simulator',  // Default to simulator mode for demo (switch to 'websocket' when backend is ready)
     wsUrl: 'ws://localhost:8000/ws',
     sseUrl: 'http://localhost:8000/api/stream',
-    orchestratorUrl: 'http://localhost:5678/webhook/ares',
-    sandboxApiUrl: 'http://localhost:8000/api/sandbox',
+    orchestratorUrl: 'http://localhost:8000/api/orchestrate',
+    sandboxApiUrl: 'http://localhost:8001/api/sandbox',
     autoReconnect: true,
   };
 
@@ -63,13 +64,31 @@ export class AresApiService {
     }
   }
 
+  public setSessionId(sessionId: string): void {
+    this.sessionId = sessionId;
+    // Auto-connect WebSocket when session ID is set
+    if (this.config.mode === 'websocket' && sessionId) {
+      this.connectWebSocket();
+    }
+  }
+
   public connectWebSocket(): void {
     this.disconnect();
+    
+    // Need session ID for backend /ws/{session_id} route
+    if (!this.sessionId) {
+      console.warn('⚠️  Cannot connect WebSocket: session ID not set. Will connect after orchestrate() call.');
+      return;
+    }
+
     try {
-      this.ws = new WebSocket(this.config.wsUrl);
+      const wsUrl = `${this.config.wsUrl}/${this.sessionId}`;
+      console.log(`🔌 Connecting WebSocket to ${wsUrl}...`);
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         this.isConnected = true;
+        console.log(`✓ WebSocket connected to ${wsUrl}`);
         this.emitEvent({
           type: 'execution_status',
           timestamp: new Date().toLocaleTimeString(),
@@ -80,6 +99,7 @@ export class AresApiService {
       this.ws.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data) as AresEvent;
+          console.log('📥 WebSocket message:', parsed.type);
           this.emitEvent(parsed);
         } catch (err) {
           console.warn('Failed to parse WebSocket message JSON:', err, event.data);
@@ -92,7 +112,8 @@ export class AresApiService {
 
       this.ws.onclose = () => {
         this.isConnected = false;
-        if (this.config.autoReconnect && this.config.mode === 'websocket') {
+        console.log('WebSocket disconnected');
+        if (this.config.autoReconnect && this.config.mode === 'websocket' && this.sessionId) {
           this.scheduleReconnect();
         }
       };
@@ -193,6 +214,76 @@ export class AresApiService {
 
   public getStatus(): boolean {
     return this.isConnected;
+  }
+
+  /**
+   * Send research query to orchestrator and get session ID
+   */
+  public async orchestrate(researchBrief: string, paperUrl?: string): Promise<{ sessionId: string; taskNodes: any[] }> {
+    console.log('📤 Sending orchestrate request to', this.config.orchestratorUrl);
+    
+    try {
+      const res = await fetch(this.config.orchestratorUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          research_brief: researchBrief,
+          paper_url: paperUrl || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`❌ Orchestrator returned ${res.status}:`, errorText);
+        throw new Error(`Orchestrator returned ${res.status}: ${errorText}`);
+      }
+
+      const data = await res.json();
+      console.log('✅ Orchestrate success. Session ID:', data.session_id);
+      
+      // Store session ID and connect WebSocket
+      this.sessionId = data.session_id;
+      if (this.config.mode === 'websocket') {
+        this.connectWebSocket();
+      }
+
+      return {
+        sessionId: data.session_id,
+        taskNodes: data.task_nodes || [],
+      };
+    } catch (err) {
+      console.error('❌ Orchestrate failed:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Check backend health status
+   */
+  public async checkHealth(): Promise<{ orchestrator: boolean; sandbox: boolean }> {
+    const results = { orchestrator: false, sandbox: false };
+
+    try {
+      const orchResp = await fetch(`${this.config.orchestratorUrl.replace('/api/orchestrate', '')}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+      });
+      results.orchestrator = orchResp.ok;
+    } catch {
+      // Orchestrator unreachable
+    }
+
+    try {
+      const sandboxResp = await fetch(`${this.config.sandboxApiUrl.replace('/api/sandbox', '')}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+      });
+      results.sandbox = sandboxResp.ok;
+    } catch {
+      // Sandbox unreachable
+    }
+
+    return results;
   }
 }
 

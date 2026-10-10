@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAresStream } from './hooks/useAresStream';
 import { useTheme } from './hooks/useTheme';
 import { useResearchEnvironment } from './hooks/useResearchEnvironment';
+import { usePipelineSimulator } from './hooks/usePipelineSimulator';
 import { Header } from './components/layout/Header';
 import { Sidebar, AppViewTab } from './components/layout/Sidebar';
 import { ConnectionModal } from './components/layout/ConnectionModal';
@@ -11,12 +12,17 @@ import { AgentGraphPanel } from './components/graph/AgentGraphPanel';
 import { LogsAndReasoningSplit } from './components/terminal/LogsAndReasoningSplit';
 import { ResearchWorkspace } from './components/workspace/ResearchWorkspace';
 import { ResearchReportViewer } from './components/report/ResearchReportViewer';
-import { Terminal, Shield, GitBranch, FileText, Sparkles } from 'lucide-react';
+import { PipelineExecutionModal } from './components/pipeline/PipelineExecutionModal';
+import { AttachedDocument } from './types/research';
+import { classifyQuery, QueryPlan } from './services/intentRouter';
+import { FileText, GitBranch, Zap } from 'lucide-react';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<AppViewTab>('workspace');
+  const [activeTab, setActiveTab]           = useState<AppViewTab>('workspace');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<QueryPlan | null>(null);
 
   const { theme, toggleTheme } = useTheme();
 
@@ -44,6 +50,8 @@ export function App() {
     isConnected,
     selectedAgentId,
     setSelectedAgentId,
+    setAgents,
+    setLogs,
     emergencyModalOpen,
     setEmergencyModalOpen,
     connectionModalOpen,
@@ -55,15 +63,45 @@ export function App() {
     clearLogs,
   } = useAresStream();
 
+  const { start: startSimulator } = usePipelineSimulator(setAgents, setLogs);
+
+  /* Intercept sendResearchQuery: decide which agents are needed, then open the modal */
+  const handleSendQuery = useCallback(
+    async (queryText: string, attachedFiles: AttachedDocument[]) => {
+      const plan = classifyQuery(queryText, attachedFiles.length);
+      setCurrentPlan(plan);
+      setPipelineModalOpen(true);
+
+      // Animate the planned agents (always for chat, since no backend is involved there)
+      if (config.mode === 'simulator' || plan.intent === 'chat') {
+        setAgents(prev =>
+          prev.map(ag =>
+            ag.id !== 'arxiv-radar'
+              ? { ...ag, status: 'idle', currentTask: 'Waiting for orchestrator dispatch...' }
+              : ag
+          )
+        );
+        startSimulator(plan);
+      }
+
+      await sendResearchQuery(queryText, attachedFiles, plan);
+    },
+    [sendResearchQuery, config.mode, setAgents, startSimulator]
+  );
+
+  /* When the footer button is clicked inside modal */
+  const handleModalViewReport = useCallback(() => {
+    setPipelineModalOpen(false);
+    // Chat replies have no report; stay in the conversation.
+    if (currentPlan?.intent !== 'chat') setActiveTab('report');
+  }, [currentPlan]);
+
   return (
     <div
-      className="flex h-screen w-screen overflow-hidden font-sans select-text transition-colors"
-      style={{
-        backgroundColor: 'var(--bg-main)',
-        color: 'var(--text-primary)',
-      }}
+      className="flex h-screen w-screen overflow-hidden select-text"
+      style={{ backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)' }}
     >
-      {/* Left Sidebar */}
+      {/* ── Sidebar ───────────────────────────────────── */}
       <Sidebar
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -73,7 +111,7 @@ export function App() {
         onNewSession={createNewSession}
         onDeleteSession={deleteSession}
         isCollapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+        onToggleCollapse={() => setSidebarCollapsed(p => !p)}
         isMobileOpen={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
         theme={theme}
@@ -81,11 +119,11 @@ export function App() {
         hasReport={Boolean(activeReport)}
       />
 
-      {/* Main Workspace Column */}
+      {/* ── Main column ───────────────────────────────── */}
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
-        {/* Top Header */}
+
         <Header
-          sessionTitle={activeSession?.title || 'PS3 Research Session'}
+          sessionTitle={activeSession?.title || 'ARES Research Session'}
           experiment={experiment}
           config={config}
           isConnected={isConnected}
@@ -97,48 +135,47 @@ export function App() {
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
         />
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6">
-          {/* 1. Interactive Research Workspace */}
+        <main className="flex-1 overflow-y-auto">
+
+          {/* Workspace */}
           {activeTab === 'workspace' && (
-            <div className="h-full flex flex-col max-w-5xl mx-auto">
+            <div className="h-full flex flex-col max-w-3xl mx-auto px-4 py-4">
               <ResearchWorkspace
                 messages={activeSession.messages}
-                onSendMessage={sendResearchQuery}
+                onSendMessage={handleSendQuery}
                 isLoading={isProcessing}
                 activeStatusMessage={pipelineStepMessage}
                 onOpenReportView={() => setActiveTab('report')}
                 activeReport={activeReport}
+                onOpenPipeline={() => setPipelineModalOpen(true)}
+                isProcessing={isProcessing}
               />
             </div>
           )}
 
-          {/* 2. Dynamic AI Agent Graph with User Node & Report Flow */}
+          {/* Agent Graph */}
           {activeTab === 'graph' && (
-            <div className="max-w-7xl mx-auto space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="max-w-7xl mx-auto px-4 py-4 space-y-3">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                    Autonomous Multi-Agent Topology Graph
+                  <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    Agent Topology
                   </h2>
-                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    Closed-loop user connected graph: User Node → Orchestrator → Research Agents → Report Delivery Bus → User
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                    Live view of the multi-agent research pipeline
                   </p>
                 </div>
-
                 {activeReport && (
                   <button
-                    type="button"
                     onClick={() => setActiveTab('report')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white shadow-xs"
-                    style={{ backgroundColor: '#10B981' }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                    style={{ backgroundColor: 'var(--success)' }}
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>View Generated Report</span>
+                    View Report
                   </button>
                 )}
               </div>
-
               <AgentGraphPanel
                 agents={agents}
                 onSelectAgent={setSelectedAgentId}
@@ -151,40 +188,36 @@ export function App() {
             </div>
           )}
 
-          {/* 3. Research Report Viewer & PDF Export */}
+          {/* Report */}
           {activeTab === 'report' && (
-            <div className="max-w-5xl mx-auto space-y-4">
+            <div className="max-w-4xl mx-auto px-4 py-4">
               {activeReport ? (
                 <ResearchReportViewer report={activeReport} />
               ) : (
                 <div
-                  className="rounded-2xl border p-12 text-center max-w-xl mx-auto"
-                  style={{
-                    backgroundColor: 'var(--surface)',
-                    borderColor: 'var(--border)',
-                  }}
+                  className="rounded-xl border p-12 text-center max-w-md mx-auto mt-16"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
                 >
-                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-40 text-indigo-400" />
-                  <h3 className="text-base font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-                    No Report Generated Yet
+                  <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: 'var(--accent)' }} />
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                    No report yet
                   </h3>
-                  <p className="text-xs mb-6" style={{ color: 'var(--text-secondary)' }}>
-                    Submit a research question in the Research Workspace to orchestrate the agent cluster and synthesize an academic report.
+                  <p className="text-xs mb-5" style={{ color: 'var(--text-secondary)' }}>
+                    Submit a research query from the Workspace tab to generate a full academic report.
                   </p>
                   <button
-                    type="button"
                     onClick={() => setActiveTab('workspace')}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                    className="px-4 py-1.5 rounded-lg text-xs font-medium text-white"
                     style={{ backgroundColor: 'var(--accent)' }}
                   >
-                    Go to Research Workspace
+                    Go to Workspace
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* 4. Cockpit & Telemetry Overview */}
+          {/* Cockpit */}
           {activeTab === 'overview' && (
             <OverviewCockpit
               agents={agents}
@@ -200,9 +233,9 @@ export function App() {
             />
           )}
 
-          {/* 5. Terminal & Reasoning Stream */}
+          {/* Terminal */}
           {activeTab === 'terminal' && (
-            <div className="max-w-7xl mx-auto h-[650px]">
+            <div className="max-w-7xl mx-auto px-4 py-4 h-[calc(100vh-7rem)]">
               <LogsAndReasoningSplit
                 logs={logs}
                 reasoning={reasoning}
@@ -212,37 +245,45 @@ export function App() {
           )}
         </main>
 
-        {/* Footer / Telemetry Bar */}
+        {/* ── Footer ──────────────────────────────────── */}
         <footer
-          className="w-full border-t px-4 py-2.5 text-[11px] flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0 select-none"
+          className="shrink-0 border-t px-4 py-2 flex items-center justify-between"
           style={{
             backgroundColor: 'var(--surface)',
             borderColor: 'var(--border)',
-            color: 'var(--text-secondary)',
           }}
         >
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Closed Loop: <code className="font-mono text-indigo-500">User → Agents → Report</code> [ACTIVE]</span>
-            </div>
-            <span>•</span>
-            <div className="flex items-center gap-1.5">
-              <GitBranch className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Citations: <code className="font-mono text-emerald-500">NeurIPS / ArXiv Grounded</code></span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1 font-mono text-[10px]">
-              <Terminal className="w-3 h-3" />
-              PS3 • 24h Hackathon Research Environment
+          <div className="flex items-center gap-4 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <span className="flex items-center gap-1.5">
+              <GitBranch className="w-3 h-3" style={{ color: 'var(--success)' }} />
+              Git-gated execution
+            </span>
+            <span className="hidden sm:flex items-center gap-1.5">
+              <Zap className="w-3 h-3" style={{ color: 'var(--warning)' }} />
+              Self-healing sandbox
             </span>
           </div>
+          <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
+            ARES · DroidFlow · 24h Hackathon
+          </span>
         </footer>
       </div>
 
-      {/* Modals */}
+      {/* ── Pipeline Execution Modal ───────────────── */}
+      <PipelineExecutionModal
+        isOpen={pipelineModalOpen}
+        onClose={handleModalViewReport}
+        agents={agents}
+        logs={logs}
+        query={activeSession?.query ?? ''}
+        pipelineStepMessage={pipelineStepMessage}
+        isProcessing={isProcessing}
+        sessionStatus={activeSession?.status}
+        planAgentIds={currentPlan?.agentIds}
+        hasReport={currentPlan ? currentPlan.intent !== 'chat' : true}
+      />
+
+      {/* ── Other modals ───────────────────────────── */}
       <EmergencyStopModal
         isOpen={emergencyModalOpen}
         onClose={() => setEmergencyModalOpen(false)}
