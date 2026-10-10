@@ -45,13 +45,14 @@ export const CustomAgentNode: React.FC<NodeProps> = ({ data, selected }) => {
 
   const isRunning = agent.status === 'running';
   const isSpawning = agent.status === 'spawning';
+  const isCompleted = agent.status === 'completed';
 
   return (
     <div
       className={`relative w-64 rounded-2xl border p-3.5 transition-all duration-200 shadow-xl ${
         selected
           ? 'ring-2 ring-indigo-500'
-          : isRunning
+          : isRunning || isCompleted
           ? 'border-emerald-500 shadow-emerald-500/10'
           : isSpawning
           ? 'border-amber-500 shadow-amber-500/10'
@@ -61,7 +62,7 @@ export const CustomAgentNode: React.FC<NodeProps> = ({ data, selected }) => {
         backgroundColor: 'var(--surface)',
         borderColor: selected
           ? 'var(--accent)'
-          : isRunning
+          : isRunning || isCompleted
           ? '#10B981'
           : isSpawning
           ? '#F59E0B'
