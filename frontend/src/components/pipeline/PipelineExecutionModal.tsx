@@ -442,7 +442,10 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
   /* Overall progress (only count non-hidden steps) */
   const completedCount = steps.filter(s => s.status === 'completed').length;
   const visibleCount   = revealedIds.size;
-  const progress = Math.round((completedCount / PIPELINE_DEF.length) * 100);
+  // Calculate progress based on actual agent count (exclude user node from denominator)
+  const agentCount = PIPELINE_DEF.length - 1;  // 7 agents (8 steps minus user node)
+  const completedAgents = steps.filter(s => s.status === 'completed' && s.id !== 'user-node').length;
+  const progress = Math.round((completedAgents / agentCount) * 100);
   const isDone   = !isProcessing && (sessionStatus === 'completed' || sessionStatus === 'completed_with_warnings');
   const isFailed = sessionStatus === 'error';
 
