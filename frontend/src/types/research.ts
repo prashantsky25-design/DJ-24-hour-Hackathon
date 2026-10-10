@@ -31,6 +31,11 @@ export interface ResearchReport {
   }[];
   limitations: string;
   citations: CitationReference[];
+  visualData?: {
+    title: string;
+    type: 'pie' | 'bar';
+    data: { name: string; value: number }[];
+  };
 }
 
 export interface ResearchMessage {

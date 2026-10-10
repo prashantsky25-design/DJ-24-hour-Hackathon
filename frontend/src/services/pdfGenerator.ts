@@ -116,6 +116,38 @@ export function generateResearchReportPDF(report: ResearchReport): void {
   });
   y += 4;
 
+  // Visual Representation
+  if (report.visualData) {
+    renderSectionHeader(`Visual Representation: ${report.visualData.title}`);
+    const data = report.visualData.data;
+    const maxVal = Math.max(...data.map((d) => d.value));
+    
+    checkPageBreak(data.length * 8 + 15);
+    
+    let chartY = y + 5;
+    const chartX = margin + 5;
+    const maxBarWidth = contentWidth - 60;
+    
+    doc.setFontSize(8);
+    data.forEach((item) => {
+      doc.setTextColor(30, 41, 59);
+      doc.setFont('helvetica', 'normal');
+      // Truncate name if too long
+      const label = item.name.length > 20 ? item.name.slice(0, 17) + '...' : item.name;
+      doc.text(label, chartX, chartY + 4);
+      
+      const barWidth = maxVal > 0 ? (item.value / maxVal) * maxBarWidth : 0;
+      doc.setFillColor(79, 70, 229);
+      doc.rect(chartX + 35, chartY, Math.max(1, barWidth), 5, 'F');
+      
+      doc.setTextColor(100, 116, 139);
+      doc.text(item.value.toString(), chartX + 37 + barWidth, chartY + 4);
+      
+      chartY += 8;
+    });
+    y = chartY + 10;
+  }
+
   // Section 4: Quantitative Comparisons
   if (report.comparisons && report.comparisons.length > 0) {
     renderSectionHeader('4. Comparative Performance Metrics');
