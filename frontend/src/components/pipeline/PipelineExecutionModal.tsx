@@ -171,11 +171,13 @@ function logColor(level: string) {
 function mapAgentStatus(agent?: AgentNodeData): StepStatus {
   if (!agent) return 'pending';
   switch (agent.status) {
-    case 'running':  return 'running';
-    case 'spawning': return 'running';
-    case 'retired':  return 'completed';
-    case 'error':    return 'failed';
-    default:         return 'pending';
+    case 'running':   return 'running';
+    case 'spawning':  return 'running';
+    case 'completed': return 'completed';  // New: map 'completed' agent status
+    case 'retired':   return 'completed';  // Old: still support 'retired' for backward compat
+    case 'error':     return 'failed';
+    case 'idle':      return 'pending';
+    default:          return 'pending';
   }
 }
 
