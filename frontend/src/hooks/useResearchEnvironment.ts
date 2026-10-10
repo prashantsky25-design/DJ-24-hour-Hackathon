@@ -286,8 +286,8 @@ The research synthesis is available below.`,
         attempts++;
       }
 
-      // Generate report (for now still using mock — will be replaced when Drafter is built)
-      const generatedReport = await buildSynthesizedReport(queryText, attachedFiles, plan.intent);
+      // Generate report from the blackboard draft
+      const generatedReport = await buildSynthesizedReport(queryText, attachedFiles, plan.intent, sessionId);
 
       const assistantMessage: ResearchMessage = {
         id: generateId('msg'),

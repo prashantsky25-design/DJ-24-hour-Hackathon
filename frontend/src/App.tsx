@@ -13,9 +13,11 @@ import { LogsAndReasoningSplit } from './components/terminal/LogsAndReasoningSpl
 import { ResearchWorkspace } from './components/workspace/ResearchWorkspace';
 import { ResearchReportViewer } from './components/report/ResearchReportViewer';
 import { PipelineExecutionModal } from './components/pipeline/PipelineExecutionModal';
+import { WarRoom } from './components/warroom/WarRoom';
 import { AttachedDocument } from './types/research';
 import { classifyQuery, QueryPlan } from './services/intentRouter';
 import { FileText, GitBranch, Zap } from 'lucide-react';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export function App() {
   const [activeTab, setActiveTab]           = useState<AppViewTab>('workspace');
@@ -46,6 +48,7 @@ export function App() {
     logs,
     reasoning,
     comparisons,
+    discussions,
     config,
     isConnected,
     selectedAgentId,
@@ -191,29 +194,38 @@ export function App() {
           {/* Report */}
           {activeTab === 'report' && (
             <div className="max-w-4xl mx-auto px-4 py-4">
-              {activeReport ? (
-                <ResearchReportViewer report={activeReport} />
-              ) : (
-                <div
-                  className="rounded-xl border p-12 text-center max-w-md mx-auto mt-16"
-                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-                >
-                  <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: 'var(--accent)' }} />
-                  <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                    No report yet
-                  </h3>
-                  <p className="text-xs mb-5" style={{ color: 'var(--text-secondary)' }}>
-                    Submit a research query from the Workspace tab to generate a full academic report.
-                  </p>
-                  <button
-                    onClick={() => setActiveTab('workspace')}
-                    className="px-4 py-1.5 rounded-lg text-xs font-medium text-white"
-                    style={{ backgroundColor: 'var(--accent)' }}
+              <ErrorBoundary fallbackTitle="Research Report Renderer">
+                {activeReport ? (
+                  <ResearchReportViewer report={activeReport} />
+                ) : (
+                  <div
+                    className="rounded-xl border p-12 text-center max-w-md mx-auto mt-16"
+                    style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
                   >
-                    Go to Workspace
-                  </button>
-                </div>
-              )}
+                    <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: 'var(--accent)' }} />
+                    <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                      No report yet
+                    </h3>
+                    <p className="text-xs mb-5" style={{ color: 'var(--text-secondary)' }}>
+                      Submit a research query from the Workspace tab to generate a full academic report.
+                    </p>
+                    <button
+                      onClick={() => setActiveTab('workspace')}
+                      className="px-4 py-1.5 rounded-lg text-xs font-medium text-white"
+                      style={{ backgroundColor: 'var(--accent)' }}
+                    >
+                      Go to Workspace
+                    </button>
+                  </div>
+                )}
+              </ErrorBoundary>
+            </div>
+          )}
+
+          {/* War Room */}
+          {activeTab === 'warroom' && (
+            <div className="max-w-4xl mx-auto px-4 py-4 h-[calc(100vh-7rem)]">
+              <WarRoom discussions={discussions} />
             </div>
           )}
 
@@ -269,12 +281,12 @@ export function App() {
         </footer>
       </div>
 
-      {/* ── Pipeline Execution Modal ───────────────── */}
       <PipelineExecutionModal
         isOpen={pipelineModalOpen}
         onClose={handleModalViewReport}
         agents={agents}
         logs={logs}
+        discussions={discussions}
         query={activeSession?.query ?? ''}
         pipelineStepMessage={pipelineStepMessage}
         isProcessing={isProcessing}

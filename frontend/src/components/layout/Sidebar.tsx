@@ -13,6 +13,7 @@ import {
   Clock,
   Sun,
   Moon,
+  Users,
 } from 'lucide-react';
 import { ResearchSession } from '../../types/research';
 

@@ -15,6 +15,8 @@ import {
 } from '../services/mockSimulator';
 import { aresApi } from '../services/apiService';
 
+import { AgentDiscussionMessage } from '../types/discussion';
+
 export function useAresStream() {
   const [agents, setAgents] = useState<AgentNodeData[]>(INITIAL_AGENTS);
   const [experiment, setExperiment] = useState<ExperimentMetadata>(INITIAL_EXPERIMENT);
@@ -22,6 +24,7 @@ export function useAresStream() {
   const [logs, setLogs] = useState<TerminalLogEntry[]>(INITIAL_LOGS);
   const [reasoning, setReasoning] = useState<ReasoningStep[]>(INITIAL_REASONING);
   const [comparisons, setComparisons] = useState<MetricComparisonSummary[]>(COMPARISON_SUMMARIES);
+  const [discussions, setDiscussions] = useState<AgentDiscussionMessage[]>([]);
   const [config, setConfig] = useState<ConnectionConfig>(aresApi.getConfig());
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -34,6 +37,11 @@ export function useAresStream() {
   // Handle incoming events (from WS, SSE, or local simulator)
   const handleEvent = useCallback((event: AresEvent) => {
     switch (event.type) {
+      case 'agent_discussion': {
+        const payload = event.payload as AgentDiscussionMessage;
+        setDiscussions((prev) => [...prev, payload]);
+        break;
+      }
       case 'agent_state_changed': {
         const payload = event.payload as {
           agentId: string;
@@ -384,6 +392,7 @@ export function useAresStream() {
     logs,
     reasoning,
     comparisons,
+    discussions,
     config,
     isConnected,
     selectedAgentId,

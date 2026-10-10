@@ -52,7 +52,8 @@ export const BENCHMARK_CITATIONS: CitationReference[] = [
 export async function buildSynthesizedReport(
   query: string,
   documents: AttachedDocument[] = [],
-  intent: QueryIntent = 'experiment'
+  intent: QueryIntent = 'experiment',
+  sessionId?: string
 ): Promise<ResearchReport> {
   const base = {
     id: `rep-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
@@ -68,33 +69,56 @@ export async function buildSynthesizedReport(
   };
 
   try {
-    const docNames = documents.map(d => d.name);
-    const response = await fetch('http://localhost:8001/api/report/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        documents: docNames,
-        intent
-      }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        ...base,
-        title: data.title || base.title,
-        executiveSummary: data.executiveSummary || '',
-        methodology: data.methodology || '',
-        findings: data.findings || [],
-        comparisons: data.comparisons || [],
-        limitations: data.limitations || '',
-        visualData: data.visualData,
-      };
+    if (sessionId) {
+      const response = await fetch(`http://localhost:8000/api/session/${sessionId}/report`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          const rep = data.report || data;
+          return {
+            ...base,
+            title: rep.title || base.title,
+            executiveSummary: rep.executiveSummary || rep.executive_summary || '',
+            methodology: rep.methodology || '',
+            findings: rep.findings || [],
+            comparisons: rep.comparisons || [],
+            limitations: rep.limitations || '',
+            visualData: rep.visualData || rep.visual_data,
+            citations: Array.isArray(rep.citations) && rep.citations.length > 0 ? rep.citations : base.citations,
+          };
+        }
+      }
     } else {
-      console.error('Failed to generate report from backend:', await response.text());
+      const docNames = documents.map(d => d.name);
+      const response = await fetch('http://localhost:8000/api/generate-report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          research_brief: query,
+          paper_url: docNames.length > 0 ? docNames[0] : null,
+          target_conference: 'NeurIPS'
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const rep = data.report || data;
+        return {
+          ...base,
+          title: rep.title || base.title,
+          executiveSummary: rep.executive_summary || rep.executiveSummary || '',
+          methodology: rep.methodology || '',
+          findings: rep.findings || [],
+          comparisons: rep.comparisons || [],
+          limitations: rep.limitations || '',
+          visualData: rep.visualData || rep.visual_data,
+          citations: Array.isArray(rep.citations) && rep.citations.length > 0 ? rep.citations : base.citations,
+        };
+      } else {
+        console.error('Failed to generate report from backend:', await response.text());
+      }
     }
   } catch (error) {
     console.error('Error generating report:', error);
