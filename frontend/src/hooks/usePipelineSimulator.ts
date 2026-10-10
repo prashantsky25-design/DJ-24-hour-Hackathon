@@ -174,7 +174,7 @@ export function usePipelineSimulator(
             ag.id === id
               ? {
                   ...ag,
-                  status: 'retired',
+                  status: 'completed',  // New 'completed' status (green, no pulse)
                   currentTask: task.replace('...', ' ✓'),
                   lastActive: 'Just now',
                   tokensUsed: ag.tokensUsed + Math.floor(Math.random() * 8000 + 2000),
