@@ -37,6 +37,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       dot: 'bg-emerald-400',
       border: 'border-emerald-500/50',
     },
+    completed: {
+      label: 'DONE',
+      bg: 'bg-emerald-950/60',
+      text: 'text-emerald-300',
+      dot: 'bg-emerald-400',
+      border: 'border-emerald-500/50',
+    },
     retired: {
       label: 'RETIRED',
       bg: 'bg-purple-950/40',

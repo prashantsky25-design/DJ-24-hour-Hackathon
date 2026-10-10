@@ -25,7 +25,7 @@ const SEQUENCE: {
 }[] = [
   {
     id: 'orchestrator',
-    durationMs: 2800,
+    durationMs: 5500,  // Increased from 2800
     task: 'Decomposing research brief into 4 task nodes...',
     logs: [
       '[Orchestrator] Received research brief. Decomposing into task DAG...',
@@ -35,7 +35,7 @@ const SEQUENCE: {
   },
   {
     id: 'paper-reader',
-    durationMs: 3200,
+    durationMs: 6000,  // Increased from 3200
     task: 'GPT-4o Vision extracting architecture diagrams from PDF...',
     logs: [
       '[Paper Reader] Downloading paper PDF...',
@@ -46,7 +46,7 @@ const SEQUENCE: {
   },
   {
     id: 'dynamic-spawner',
-    durationMs: 2200,
+    durationMs: 4500,  // Increased from 2200
     task: 'Spawning Coding Agent and Sandbox Executor sub-tasks...',
     logs: [
       '[Task Planner] Citations extracted: 3 relevant papers found.',
@@ -56,7 +56,7 @@ const SEQUENCE: {
   },
   {
     id: 'coding-agent',
-    durationMs: 4000,
+    durationMs: 7500,  // Increased from 4000
     task: 'Synthesising train.py with KAN layer implementation...',
     logs: [
       '[Coding Agent] Writing train.py based on paper architecture...',
@@ -67,7 +67,7 @@ const SEQUENCE: {
   },
   {
     id: 'sandbox-executor',
-    durationMs: 5000,
+    durationMs: 9000,  // Increased from 5000
     task: 'Git-gated execution in E2B sandbox (commit a7f3b89)...',
     logs: [
       '[E2B] Sandbox created. Template: python3, timeout: 300s',
@@ -80,7 +80,7 @@ const SEQUENCE: {
   },
   {
     id: 'debugging-agent',
-    durationMs: 3000,
+    durationMs: 5500,  // Increased from 3000
     task: 'Audit: verifying metrics and git-gated state...',
     logs: [
       '[Self-Healer] Reviewing execution logs for anomalies...',
@@ -91,7 +91,7 @@ const SEQUENCE: {
   },
   {
     id: 'drafter-agent',
-    durationMs: 2500,
+    durationMs: 5000,  // Increased from 2500
     task: 'Generating IEEE-format LaTeX report draft...',
     logs: [
       '[Drafter] Rendering IEEE LaTeX template...',
@@ -174,7 +174,7 @@ export function usePipelineSimulator(
             ag.id === id
               ? {
                   ...ag,
-                  status: 'retired',
+                  status: 'completed',  // New 'completed' status (green, no pulse)
                   currentTask: task.replace('...', ' ✓'),
                   lastActive: 'Just now',
                   tokensUsed: ag.tokensUsed + Math.floor(Math.random() * 8000 + 2000),

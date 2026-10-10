@@ -228,7 +228,7 @@ export function useAresStream() {
           return ag;
         })
       );
-    }, 4500);
+    }, 3000);  // 3 seconds per epoch (30 epochs = 90 seconds total training)
 
     return () => clearInterval(interval);
   }, [config.mode, experiment.status, metrics]);

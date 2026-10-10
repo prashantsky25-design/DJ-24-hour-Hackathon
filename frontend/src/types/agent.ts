@@ -1,4 +1,4 @@
-export type AgentStatus = 'idle' | 'spawning' | 'running' | 'retired' | 'error';
+export type AgentStatus = 'idle' | 'spawning' | 'running' | 'completed' | 'retired' | 'error';
 
 export interface AgentNodeData {
   id: string;
