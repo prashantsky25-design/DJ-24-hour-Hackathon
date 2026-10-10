@@ -18,9 +18,74 @@ interface ResearchReportViewerProps {
   report: ResearchReport;
 }
 
+interface NormalizedComparison {
+  metric: string;
+  baseline: string;
+  proposed: string;
+  delta: string;
+}
+
+function parseComparison(comp: any): NormalizedComparison {
+  if (typeof comp === 'string') {
+    const parts = comp.split('|').map((s) => s.trim());
+    if (parts.length >= 3) {
+      return {
+        metric: parts[0].includes(':') ? parts[0].split(':')[0].trim() : 'Metric',
+        baseline: parts[0].includes(':') ? parts[0].split(':')[1].trim() : parts[0],
+        proposed: parts[1].includes(':') ? parts[1].split(':')[1].trim() : parts[1],
+        delta: parts[2].includes(':') ? parts[2].split(':')[1].trim() : parts[2],
+      };
+    }
+    return {
+      metric: 'Observation',
+      baseline: comp,
+      proposed: '—',
+      delta: '—',
+    };
+  }
+  if (comp && typeof comp === 'object') {
+    const rawBaseline = String(comp.baseline || comp.target || 'N/A');
+    const metric = rawBaseline.includes(':') ? rawBaseline.split(':')[0].trim() : (comp.metric || 'Metric');
+    const baselineVal = rawBaseline.includes(':') ? rawBaseline.split(':')[1].trim() : rawBaseline;
+    const rawProposed = String(comp.proposed || comp.result || 'N/A');
+    const proposedVal = rawProposed.includes(':') ? rawProposed.split(':')[1].trim() : rawProposed;
+    const deltaVal = String(comp.delta || comp.difference || '—');
+    return {
+      metric,
+      baseline: baselineVal,
+      proposed: proposedVal,
+      delta: deltaVal,
+    };
+  }
+  return { metric: 'Metric', baseline: 'N/A', proposed: 'N/A', delta: '—' };
+}
+
 export const ResearchReportViewer: React.FC<ResearchReportViewerProps> = ({ report }) => {
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Safe field resolution
+  const title = report?.title || 'Technical Research Synthesis';
+  const query = report?.query || 'Research query';
+  const generatedAt = report?.generatedAt || new Date().toISOString();
+  const executiveSummary = report?.executiveSummary || '';
+  const methodology = report?.methodology || '';
+  const rawFindings = Array.isArray(report?.findings)
+    ? report.findings
+    : typeof report?.findings === 'string'
+    ? [report.findings]
+    : [];
+  const rawComparisons = Array.isArray(report?.comparisons) ? report.comparisons : [];
+  const normalizedComparisons = rawComparisons.map(parseComparison);
+  const limitations = report?.limitations || '';
+  const citations = Array.isArray(report?.citations) ? report.citations : [];
+
+  const validVisualData =
+    report?.visualData &&
+    Array.isArray(report.visualData.data) &&
+    report.visualData.data.length > 0
+      ? report.visualData
+      : null;
 
   const handleDownloadPDF = () => {
     setDownloading(true);
@@ -34,32 +99,35 @@ export const ResearchReportViewer: React.FC<ResearchReportViewerProps> = ({ repo
   };
 
   const handleCopyMarkdown = () => {
-    const md = `# ${report.title}
-*Generated on ${new Date(report.generatedAt).toLocaleString()} by PS3 Autonomous Research Environment*
+    const md = `# ${title}
+*Generated on ${new Date(generatedAt).toLocaleString()} by PS3 Autonomous Research Environment*
 
 ## Research Query
-> ${report.query}
+> ${query}
 
 ## 1. Executive Summary
-${report.executiveSummary}
+${executiveSummary}
 
 ## 2. Methodology & Multi-Agent Protocol
-${report.methodology}
+${methodology}
 
 ## 3. Empirical Findings & Observations
-${report.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+${rawFindings.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
-${report.comparisons.length > 0 ? `## 4. Quantitative Comparisons
-| Baseline | Proposed | Observed Delta |
-| --- | --- | --- |
-${report.comparisons.map((c) => `| ${c.baseline} | ${c.proposed} | ${c.delta} |`).join('\n')}
+${
+  normalizedComparisons.length > 0
+    ? `## 4. Quantitative Comparisons
+| Metric | Baseline | Proposed | Observed Delta |
+| --- | --- | --- | --- |
+${normalizedComparisons.map((c) => `| ${c.metric} | ${c.baseline} | ${c.proposed} | ${c.delta} |`).join('\n')}
 
-` : ''}
-## 5. Limitations
-${report.limitations}
+`
+    : ''
+}## 5. Limitations
+${limitations}
 
 ## 6. References & Formal Citations
-${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}". In *${c.venue}*. ${c.doi ? `DOI: ${c.doi}` : ''}`).join('\n')}
+${citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}". In *${c.venue}*. ${c.doi ? `DOI: ${c.doi}` : ''}`).join('\n')}
 `;
     navigator.clipboard.writeText(md);
     setCopied(true);
@@ -99,11 +167,10 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
           <button
             type="button"
             onClick={handleCopyMarkdown}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium hover:opacity-100 opacity-80 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:bg-slate-50 dark:hover:bg-zinc-800"
             style={{
-              backgroundColor: 'var(--surface-secondary)',
               borderColor: 'var(--border)',
-              color: 'var(--text-primary)',
+              color: 'var(--text-secondary)',
             }}
             title="Copy formatted markdown report"
           >
@@ -115,7 +182,7 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>Copy Markdown</span>
+                <span>Copy MD</span>
               </>
             )}
           </button>
@@ -125,8 +192,8 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
             type="button"
             onClick={handleDownloadPDF}
             disabled={downloading}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-semibold text-white shadow-md transition-all hover:scale-102 active:scale-98 disabled:opacity-50"
-            style={{ backgroundColor: '#10B981' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: '#4F46E5' }}
             title="Download genuine formatted research PDF"
           >
             <Download className={`w-3.5 h-3.5 ${downloading ? 'animate-bounce' : ''}`} />
@@ -135,63 +202,61 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
         </div>
       </div>
 
-      {/* Document Title Header */}
-      <div className="pt-6 pb-4">
-        <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight leading-snug" style={{ color: 'var(--text-primary)' }}>
-          {report.title}
+      {/* Header Info */}
+      <div className="mt-8 space-y-3">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight" style={{ color: 'var(--text-primary)' }}>
+          {title}
         </h1>
 
-        <div className="flex flex-wrap items-center gap-4 mt-3 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-          <span className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
+          <div className="flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5" />
-            {new Date(report.generatedAt).toLocaleDateString(undefined, { dateStyle: 'long' })}
-          </span>
-          <span>•</span>
-          <span className="flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-indigo-400" />
-            PS3 Dynamic Multi-Agent Cluster
-          </span>
-          <span>•</span>
-          <span className="flex items-center gap-1.5">
-            <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-            {report.citations.length} Verified References
-          </span>
+            <span>{new Date(generatedAt).toLocaleDateString(undefined, { dateStyle: 'long' })}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5" />
+            <span>Multi-Agent Synthesis Engine</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+            <span>{citations.length} Verified References</span>
+          </div>
         </div>
       </div>
 
-      {/* Inquired Query Callout Box */}
+      {/* Query Banner */}
       <div
-        className="my-4 p-4 rounded-xl border text-xs leading-relaxed"
+        className="mt-6 p-4 rounded-xl border text-xs leading-relaxed space-y-1"
         style={{
           backgroundColor: 'var(--surface-secondary)',
           borderColor: 'var(--border)',
         }}
       >
-        <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-indigo-500 block mb-1">
-          Initiating Research Query:
+        <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-indigo-500">
+          Research Query
         </span>
-        <p className="italic font-medium" style={{ color: 'var(--text-primary)' }}>
-          "{report.query}"
+        <p className="font-medium italic" style={{ color: 'var(--text-primary)' }}>
+          "{query}"
         </p>
       </div>
 
       {/* Section 1: Executive Summary */}
-      <div className="mt-6 space-y-2">
+      <div className="mt-8 space-y-2">
         <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-indigo-500">
           1. Executive Summary & Abstract
         </h2>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-          {report.executiveSummary}
+          {executiveSummary}
         </p>
       </div>
 
       {/* Section 2: Methodology */}
       <div className="mt-6 space-y-2">
         <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-indigo-500">
-          2. Multi-Agent Protocol & Methodology
+          2. Methodology & Multi-Agent Protocol
         </h2>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-          {report.methodology}
+          {methodology}
         </p>
       </div>
 
@@ -200,18 +265,14 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
         <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-indigo-500">
           3. Empirical Findings & Observations
         </h2>
-        <ul className="space-y-2 text-sm">
-          {report.findings.map((finding, idx) => (
+        <ul className="space-y-2 mt-2">
+          {rawFindings.map((finding, idx) => (
             <li
               key={idx}
-              className="flex items-start gap-2.5 p-2.5 rounded-lg border leading-relaxed"
-              style={{
-                backgroundColor: 'var(--surface-secondary)',
-                borderColor: 'var(--border)',
-                color: 'var(--text-primary)',
-              }}
+              className="text-sm flex items-start gap-2.5 leading-relaxed"
+              style={{ color: 'var(--text-primary)' }}
             >
-              <span className="font-mono font-bold text-indigo-500 shrink-0 text-xs mt-0.5">
+              <span className="font-mono font-bold text-xs text-indigo-500 shrink-0 mt-0.5">
                 [{idx + 1}]
               </span>
               <span>{finding}</span>
@@ -221,26 +282,38 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
       </div>
 
       {/* Visual Representation (Optional) */}
-      {report.visualData && (
+      {validVisualData && (
         <div className="mt-6 space-y-2">
           <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-indigo-500">
-            Visual Representation: {report.visualData.title}
+            Visual Representation: {validVisualData.title}
           </h2>
           <div className="w-full h-64 mt-4 bg-white rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
             <ResponsiveContainer width="100%" height="100%">
-              {report.visualData.type === 'bar' ? (
-                <BarChart data={report.visualData.data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              {validVisualData.type === 'bar' ? (
+                <BarChart data={validVisualData.data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" fontSize={10} />
                   <YAxis fontSize={10} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
                 </BarChart>
               ) : (
                 <PieChart>
-                  <Pie data={report.visualData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#82ca9d" label>
-                    {report.visualData.data.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={['#8884d8', '#83a6ed', '#8dd1e1', '#82ca9d', '#a4de6c', '#d0ed57'][index % 6]} />
+                  <Pie
+                    data={validVisualData.data}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#82ca9d"
+                    label
+                  >
+                    {validVisualData.data.map((_, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][index % 6]}
+                      />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -253,7 +326,7 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
       )}
 
       {/* Section 4: Quantitative Comparisons Table */}
-      {report.comparisons && report.comparisons.length > 0 && (
+      {normalizedComparisons.length > 0 && (
         <div className="mt-6 space-y-2">
           <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-indigo-500">
             4. Comparative Performance Metrics
@@ -281,16 +354,16 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
                 </tr>
               </thead>
               <tbody className="divide-y font-mono" style={{ borderColor: 'var(--border)' }}>
-                {report.comparisons.map((comp, idx) => (
+                {normalizedComparisons.map((comp, idx) => (
                   <tr key={idx} className="hover:opacity-90">
                     <td className="py-2.5 px-4 font-sans font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {comp.baseline.split(':')[0]}
+                      {comp.metric}
                     </td>
                     <td className="py-2.5 px-4" style={{ color: 'var(--text-secondary)' }}>
-                      {comp.baseline.split(':')[1]?.trim() || comp.baseline}
+                      {comp.baseline}
                     </td>
                     <td className="py-2.5 px-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      {comp.proposed.split(':')[1]?.trim() || comp.proposed}
+                      {comp.proposed}
                     </td>
                     <td className="py-2.5 px-4 font-bold text-emerald-500">
                       {comp.delta}
@@ -309,7 +382,7 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
           5. Limitations & Future Scope
         </h2>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-          {report.limitations}
+          {limitations}
         </p>
       </div>
 
@@ -321,7 +394,7 @@ ${report.citations.map((c) => `[${c.id}] ${c.authors} (${c.year}). "${c.title}".
         </h2>
 
         <div className="space-y-3">
-          {report.citations.map((citation) => (
+          {citations.map((citation) => (
             <div
               key={citation.id}
               className="p-3 rounded-xl border text-xs leading-relaxed space-y-1 transition-colors"

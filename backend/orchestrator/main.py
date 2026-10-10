@@ -14,6 +14,10 @@ from radar import start_arxiv_radar_loop
 from task_parser import decompose_research_brief
 from report_drafter import generate_research_report
 
+# Import new collaborative agents module
+from blackboard import blackboard
+from review_loop import run_review_loop
+
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -87,13 +91,32 @@ def health():
     return {"status": "healthy", "service": "ARES Orchestrator"}
 
 
+async def launch_collaborative_agents(session_id: str, query: str):
+    try:
+        session_store.log(session_id, "Launching collaborative agent cluster...")
+        await run_review_loop(session_id, query)
+        
+        session = session_store.get(session_id)
+        if session:
+            session["status"] = "completed"
+    except Exception as e:
+        print(f"Error in review loop: {e}")
+        session = session_store.get(session_id)
+        if session:
+            session["status"] = "error"
+            session_store.log(session_id, f"Pipeline Error: {e}")
+
 @app.post("/api/orchestrate")
 def orchestrate(payload: OrchestrateRequest, background_tasks: BackgroundTasks):
+    # Keep the old plan decomposition just so frontend renders the UI properly initially
     plan = decompose_research_brief(payload.research_brief, payload.paper_url)
     session_id = str(uuid.uuid4())
     session = session_store.create(session_id, plan, payload.research_brief)
     session["status"] = "running"
-    background_tasks.add_task(execute_task_pipeline, session_id)
+    
+    # Launch new review loop
+    background_tasks.add_task(launch_collaborative_agents, session_id, payload.research_brief)
+    
     return {
         "session_id": session_id,
         "status": "running",
@@ -137,6 +160,50 @@ def get_logs(session_id: str):
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@app.get("/api/session/{session_id}/discussion")
+def get_discussion(session_id: str):
+    """Get the full agent blackboard discussion."""
+    messages = blackboard.get_messages(session_id)
+    return {"messages": [m.model_dump() for m in messages]}
+
+import re
+import json
+
+@app.get("/api/session/{session_id}/report")
+def get_report(session_id: str):
+    """Get the finalized report from the blackboard."""
+    messages = blackboard.get_messages(session_id)
+    draft_content = ""
+    for msg in reversed(messages):
+        if msg.message_type == "draft":
+            draft_content = msg.content
+            break
+            
+    if not draft_content:
+        session = session_store.get(session_id)
+        query = session["query"] if session else "Investigation"
+        try:
+            report_data = generate_research_report(query)
+            return {"success": True, **report_data}
+        except Exception:
+            return {"success": False, "report": {}}
+        
+    json_match = re.search(r'```json\s*(\{.*?\})\s*```', draft_content, re.DOTALL)
+    json_str = json_match.group(1) if json_match else draft_content
+    
+    try:
+        report_data = json.loads(json_str)
+        return {
+            "success": True, 
+            **report_data
+        }
+    except Exception as e:
+        return {
+            "success": True,
+            "executiveSummary": draft_content.strip()
+        }
 
 
 @app.post("/api/generate-report")
@@ -195,6 +262,7 @@ async def broadcast_session_update(session_id: str, event_type: str, payload: di
         "payload": payload
     })
 
+blackboard.set_broadcast_callback(broadcast_session_update)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000)

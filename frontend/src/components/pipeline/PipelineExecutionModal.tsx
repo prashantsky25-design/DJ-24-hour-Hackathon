@@ -43,6 +43,8 @@ import {
 } from 'lucide-react';
 import { AgentNodeData } from '../../types/agent';
 import { TerminalLogEntry } from '../../types/log';
+import { AgentDiscussionMessage } from '../../types/discussion';
+import { WarRoom } from '../warroom/WarRoom';
 
 /* ─────────────────────────────────────────────────────────── */
 /* Types                                                        */
@@ -65,6 +67,7 @@ interface PipelineExecutionModalProps {
   onClose: () => void;
   agents: AgentNodeData[];
   logs: TerminalLogEntry[];
+  discussions?: AgentDiscussionMessage[];
   query: string;
   pipelineStepMessage: string;
   isProcessing: boolean;
@@ -380,6 +383,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
   onClose,
   agents,
   logs,
+  discussions,
   query,
   pipelineStepMessage,
   isProcessing,
@@ -389,6 +393,7 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
 }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [leftView, setLeftView] = useState<'graph' | 'warroom'>('graph');
 
   /* Auto-scroll logs */
   useEffect(() => {
@@ -587,10 +592,23 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
               className="flex items-center gap-3 px-4 py-2 shrink-0 border-b"
               style={{ borderColor: '#1A1A1A', backgroundColor: '#0F0F0F' }}
             >
-              <span className="text-[9px] uppercase tracking-widest font-semibold" style={{ color: '#3F3F46' }}>
-                Agent Workflow
+              <span className="text-[9px] uppercase tracking-widest font-semibold flex items-center gap-3" style={{ color: '#3F3F46' }}>
+                <button
+                  onClick={() => setLeftView('graph')}
+                  className="hover:text-white transition-colors"
+                  style={{ color: leftView === 'graph' ? '#E4E4E7' : '#71717A' }}
+                >
+                  AGENT WORKFLOW
+                </button>
+                <button
+                  onClick={() => setLeftView('warroom')}
+                  className="hover:text-white transition-colors"
+                  style={{ color: leftView === 'warroom' ? '#E4E4E7' : '#71717A' }}
+                >
+                  WAR ROOM
+                </button>
               </span>
-              {pipelineStepMessage && (
+              {pipelineStepMessage && leftView === 'graph' && (
                 <span className="text-[11px] truncate" style={{ color: '#71717A' }}>
                   {pipelineStepMessage}
                 </span>
@@ -610,11 +628,17 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
               </div>
             </div>
 
-            {/* ReactFlow */}
+            {/* ReactFlow / WarRoom */}
             <div className="flex-1 min-h-0">
-              <ReactFlowProvider>
-                <PipelineGraph steps={steps} revealedIds={revealedIds} positions={positions} edges={edgeDefs} />
-              </ReactFlowProvider>
+              {leftView === 'graph' ? (
+                <ReactFlowProvider>
+                  <PipelineGraph steps={steps} revealedIds={revealedIds} positions={positions} edges={edgeDefs} />
+                </ReactFlowProvider>
+              ) : (
+                <div style={{ height: '100%', overflowY: 'auto' }}>
+                  <WarRoom discussions={discussions || []} />
+                </div>
+              )}
             </div>
           </div>
 
