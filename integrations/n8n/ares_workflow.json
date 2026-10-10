@@ -1,0 +1,122 @@
+{
+  "name": "ARES Master Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ares/orchestrate",
+        "options": {}
+      },
+      "name": "Next.js Webhook (Start)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ares-start-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/orchestrate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "research_brief",
+              "value": "={{$json.body.research_brief}}"
+            },
+            {
+              "name": "paper_url",
+              "value": "={{$json.body.paper_url}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Trigger FastAPI (Spawn Agents)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ares/stop",
+        "options": {}
+      },
+      "name": "Next.js Webhook (Stop)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 500],
+      "webhookId": "ares-stop-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/stop",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "session_id",
+              "value": "={{$json.body.session_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Trigger FastAPI (Stop)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 500]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "name": "ArXiv Radar Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 700]
+    },
+    {
+      "parameters": {
+        "content": "## ARES n8n Orchestrator\nThis workflow connects the Next.js UI to the Python FastAPI Agent Engine."
+      },
+      "name": "Documentation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [180, 200]
+    }
+  ],
+  "connections": {
+    "Next.js Webhook (Start)": {
+      "main": [
+        [
+          {
+            "node": "Trigger FastAPI (Spawn Agents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next.js Webhook (Stop)": {
+      "main": [
+        [
+          {
+            "node": "Trigger FastAPI (Stop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
