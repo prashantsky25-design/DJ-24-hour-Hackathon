@@ -4,6 +4,7 @@ import { MetricPoint, ExperimentMetadata } from './metric';
 
 export type AresEventType =
   | 'agent_state_changed'
+  | 'agent_discussion'
   | 'log_chunk'
   | 'reasoning_step'
   | 'metric_point'

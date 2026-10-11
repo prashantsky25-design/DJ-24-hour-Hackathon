@@ -37,7 +37,11 @@ class Blackboard:
         self.initialize_session(message.session_id)
         self._messages[message.session_id].append(message)
         
-        print(f"[{message.agent_name} | {message.message_type}] {message.content[:100]}...")
+        try:
+            safe_content = message.content[:100].encode('ascii', errors='replace').decode('ascii')
+            print(f"[{message.agent_name} | {message.message_type}] {safe_content}...")
+        except Exception:
+            pass
         
         if self.broadcast_callback:
             await self.broadcast_callback(

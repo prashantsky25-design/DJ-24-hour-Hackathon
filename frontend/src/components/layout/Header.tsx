@@ -17,13 +17,13 @@ import {
 interface HeaderProps {
   sessionTitle: string;
   experiment: ExperimentMetadata;
-  config: ConnectionConfig;
-  isConnected: boolean;
-  hasReport: boolean;
-  onOpenReport: () => void;
-  onOpenEmergencyModal: () => void;
-  onTogglePauseResume: () => void;
-  onOpenConnectionModal: () => void;
+  config?: ConnectionConfig;
+  isConnected?: boolean;
+  hasReport?: boolean;
+  onOpenReport?: () => void;
+  onOpenEmergencyModal?: () => void;
+  onTogglePauseResume?: () => void;
+  onOpenConnectionModal?: () => void;
   onOpenMobileSidebar: () => void;
   onOpenImplementationDetails?: () => void;
 }
@@ -45,11 +45,11 @@ export const Header: React.FC<HeaderProps> = ({
   const isHalted  = experiment.status === 'halted';
 
   const connLabel =
-    config.mode === 'simulator' ? 'Simulator' :
-    config.mode === 'websocket' ? 'WebSocket' : 'SSE';
+    config?.mode === 'simulator' ? 'Simulator' :
+    config?.mode === 'websocket' ? 'WebSocket' : 'SSE';
 
   const connColor =
-    config.mode === 'simulator' ? '#60A5FA' :
+    config?.mode === 'simulator' ? '#60A5FA' :
     isConnected ? 'var(--success)' : 'var(--warning)';
 
   return (
@@ -130,25 +130,27 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Connection badge */}
-        <button
-          onClick={onOpenConnectionModal}
-          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-colors"
-          style={{
-            backgroundColor: 'var(--surface-secondary)',
-            borderColor: 'var(--border)',
-            color: 'var(--text-secondary)',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--hover)')}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--surface-secondary)')}
-          title="Connection settings"
-        >
-          {config.mode !== 'simulator' && isConnected
-            ? <Wifi  className="w-3 h-3" style={{ color: connColor }} />
-            : <WifiOff className="w-3 h-3" style={{ color: connColor }} />
-          }
-          <span style={{ color: connColor }}>{connLabel}</span>
-          <Settings2 className="w-3 h-3 ml-0.5" style={{ color: 'var(--text-muted)' }} />
-        </button>
+        {config && (
+          <button
+            onClick={onOpenConnectionModal}
+            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-colors"
+            style={{
+              backgroundColor: 'var(--surface-secondary)',
+              borderColor: 'var(--border)',
+              color: 'var(--text-secondary)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--hover)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--surface-secondary)')}
+            title="Connection settings"
+          >
+            {config.mode !== 'simulator' && isConnected
+              ? <Wifi  className="w-3 h-3" style={{ color: connColor }} />
+              : <WifiOff className="w-3 h-3" style={{ color: connColor }} />
+            }
+            <span style={{ color: connColor }}>{connLabel}</span>
+            <Settings2 className="w-3 h-3 ml-0.5" style={{ color: 'var(--text-muted)' }} />
+          </button>
+        )}
 
         {/* Report button */}
         {hasReport && (

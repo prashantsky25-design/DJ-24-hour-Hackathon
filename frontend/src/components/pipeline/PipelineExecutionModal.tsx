@@ -45,6 +45,7 @@ import { AgentNodeData } from '../../types/agent';
 import { TerminalLogEntry } from '../../types/log';
 import { AgentDiscussionMessage } from '../../types/discussion';
 import { WarRoom } from '../warroom/WarRoom';
+import { aresApi } from '../../services/apiService';
 
 /* ─────────────────────────────────────────────────────────── */
 /* Types                                                        */
@@ -65,6 +66,7 @@ interface PipelineStep {
 interface PipelineExecutionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  sessionId?: string;
   agents: AgentNodeData[];
   logs: TerminalLogEntry[];
   discussions?: AgentDiscussionMessage[];
@@ -122,17 +124,15 @@ const EDGE_DEFS: [string, string][] = [
 /* ─────────────────────────────────────────────────────────── */
 function agentIcon(id: string) {
   const cls = 'w-4 h-4 shrink-0';
-  switch (id) {
-    case 'user-node':        return <User         className={cls} style={{ color: '#A78BFA' }} />;
-    case 'orchestrator':     return <Sparkles      className={cls} style={{ color: '#818CF8' }} />;
-    case 'paper-reader':     return <Eye           className={cls} style={{ color: '#FBBF24' }} />;
-    case 'dynamic-spawner':  return <Zap           className={cls} style={{ color: '#22D3EE' }} />;
-    case 'coding-agent':     return <FileCode2     className={cls} style={{ color: '#34D399' }} />;
-    case 'sandbox-executor': return <Server        className={cls} style={{ color: '#38BDF8' }} />;
-    case 'debugging-agent':  return <Bug           className={cls} style={{ color: '#FB7185' }} />;
-    case 'drafter-agent':    return <FileText      className={cls} style={{ color: '#60A5FA' }} />;
-    default:                 return <Cpu           className={cls} style={{ color: '#94A3B8' }} />;
-  }
+  if (id.includes('user')) return <User className={cls} style={{ color: '#A78BFA' }} />;
+  if (id.includes('orchestrator') || id.includes('planner')) return <Sparkles className={cls} style={{ color: '#818CF8' }} />;
+  if (id.includes('researcher') || id.includes('reader')) return <Eye className={cls} style={{ color: '#FBBF24' }} />;
+  if (id.includes('spawner') || id.includes('tuner')) return <Zap className={cls} style={{ color: '#22D3EE' }} />;
+  if (id.includes('coding') || id.includes('trainer')) return <FileCode2 className={cls} style={{ color: '#34D399' }} />;
+  if (id.includes('sandbox')) return <Server className={cls} style={{ color: '#38BDF8' }} />;
+  if (id.includes('debug') || id.includes('critic') || id.includes('evaluator')) return <Bug className={cls} style={{ color: '#FB7185' }} />;
+  if (id.includes('draft') || id.includes('reviewer')) return <FileText className={cls} style={{ color: '#60A5FA' }} />;
+  return <Cpu className={cls} style={{ color: '#94A3B8' }} />;
 }
 
 function borderForStatus(s: StepStatus) {
@@ -196,62 +196,63 @@ const PipelineFlowNode: React.FC<NodeProps> = ({ data }) => {
   return (
     <div
       style={{
-        width: 168,
+        width: 220,
         backgroundColor: bgForStatus(d.status),
         borderColor: border,
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderStyle: 'solid',
-        borderRadius: 12,
+        borderRadius: 14,
         boxShadow: glowForStatus(d.status),
         opacity: d.revealed ? 1 : 0,
-        transform: d.revealed ? 'scale(1)' : 'scale(0.85)',
-        transition: 'opacity 0.35s ease, transform 0.35s ease, border-color 0.3s, box-shadow 0.3s',
+        transform: d.revealed ? 'scale(1)' : 'scale(0.88)',
+        transition: 'opacity 0.4s ease, transform 0.4s ease, border-color 0.3s, box-shadow 0.3s',
       }}
     >
       <Handle
         type="target"
         position={Position.Left}
-        style={{ background: border, width: 7, height: 7, border: '2px solid #141414' }}
+        id="left"
+        style={{ background: border, width: 8, height: 8, border: '2px solid #141414' }}
       />
 
-      <div style={{ padding: '10px 12px' }}>
+      <div style={{ padding: '12px 14px' }}>
         {/* Header row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <div style={{
-            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+            width: 32, height: 32, borderRadius: 10, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.06)',
-            border: `1px solid ${border}40`,
+            background: 'rgba(255,255,255,0.08)',
+            border: `1.5px solid ${border}50`,
           }}>
             {agentIcon(d.agentId)}
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#E4E4E7', margin: 0, lineHeight: 1.2 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#F4F4F5', margin: 0, lineHeight: 1.2 }}>
               {d.label}
             </p>
-            <p style={{ fontSize: 9.5, color: '#71717A', margin: 0, marginTop: 1 }}>
+            <p style={{ fontSize: 10.5, fontWeight: 500, color: '#A1A1AA', margin: 0, marginTop: 2 }}>
               {d.role}
             </p>
           </div>
           {/* Status icon */}
           <div style={{ flexShrink: 0 }}>
-            {d.status === 'running'   && <Loader2     style={{ width: 13, height: 13, color: border, animation: 'spin 1s linear infinite' }} />}
-            {d.status === 'completed' && <CheckCircle2 style={{ width: 13, height: 13, color: border }} />}
-            {d.status === 'failed'    && <AlertCircle  style={{ width: 13, height: 13, color: border }} />}
-            {d.status === 'pending'   && <Circle       style={{ width: 13, height: 13, color: '#52525B', opacity: 0.5 }} />}
+            {d.status === 'running'   && <Loader2     style={{ width: 16, height: 16, color: border, animation: 'spin 1s linear infinite' }} />}
+            {d.status === 'completed' && <CheckCircle2 style={{ width: 16, height: 16, color: border }} />}
+            {d.status === 'failed'    && <AlertCircle  style={{ width: 16, height: 16, color: border }} />}
+            {d.status === 'pending'   && <Circle       style={{ width: 14, height: 14, color: '#71717A', opacity: 0.6 }} />}
           </div>
         </div>
 
         {/* Current task */}
         {d.detail && (
           <p style={{
-            fontSize: 9.5,
-            color: '#9CA3AF',
+            fontSize: 10.5,
+            color: '#D4D4D8',
             margin: 0,
             lineHeight: 1.45,
             overflow: 'hidden',
             display: '-webkit-box',
-            WebkitLineClamp: 2,
+            WebkitLineClamp: 3,
             WebkitBoxOrient: 'vertical',
           }}>
             {d.detail}
@@ -261,8 +262,8 @@ const PipelineFlowNode: React.FC<NodeProps> = ({ data }) => {
         {/* Running pulse bar */}
         {d.status === 'running' && (
           <div style={{
-            marginTop: 8,
-            height: 2,
+            marginTop: 10,
+            height: 2.5,
             borderRadius: 99,
             background: `linear-gradient(90deg, transparent, ${border}, transparent)`,
             backgroundSize: '200% 100%',
@@ -274,7 +275,8 @@ const PipelineFlowNode: React.FC<NodeProps> = ({ data }) => {
       <Handle
         type="source"
         position={Position.Right}
-        style={{ background: border, width: 7, height: 7, border: '2px solid #141414' }}
+        id="right"
+        style={{ background: border, width: 8, height: 8, border: '2px solid #141414' }}
       />
     </div>
   );
@@ -328,15 +330,16 @@ function PipelineGraph({
           id: `e-${src}-${tgt}`,
           source: src,
           target: tgt,
+          type: 'smoothstep',
           animated: srcStep?.status === 'running',
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            width: 12, height: 12,
+            width: 14, height: 14,
             color: edgeColor,
           },
           style: {
             stroke: edgeColor,
-            strokeWidth: isActive ? 2 : 1.5,
+            strokeWidth: isActive ? 2.5 : 2,
             opacity: 1,
             transition: 'stroke 0.3s, stroke-width 0.3s',
           },
@@ -350,10 +353,10 @@ function PipelineGraph({
       edges={rfEdges}
       nodeTypes={nodeTypes}
       fitView
-      fitViewOptions={{ padding: 0.22 }}
-      minZoom={0.25}
-      maxZoom={1.6}
-      nodesDraggable={false}
+      fitViewOptions={{ padding: 0.18, duration: 450 }}
+      minZoom={0.55}
+      maxZoom={1.25}
+      nodesDraggable={true}
       nodesConnectable={false}
       elementsSelectable={false}
       style={{ background: '#0A0A0A' }}
@@ -381,6 +384,7 @@ function PipelineGraph({
 export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
   isOpen,
   onClose,
+  sessionId,
   agents,
   logs,
   discussions,
@@ -394,6 +398,23 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [leftView, setLeftView] = useState<'graph' | 'warroom'>('graph');
+  const [isEscaping, setIsEscaping] = useState(false);
+
+  const handleEscape = async () => {
+    setIsEscaping(true);
+    try {
+      const sid = sessionId || aresApi.getSessionId();
+      if (sid) {
+        await fetch(`http://localhost:8000/api/session/${sid}/escape`, { method: 'POST' });
+      }
+      // Also invoke global escape endpoint for absolute redundancy
+      await fetch('http://localhost:8000/api/escape', { method: 'POST' });
+    } catch (e) {
+      console.warn('Escape session error:', e);
+    } finally {
+      setTimeout(() => setIsEscaping(false), 1500);
+    }
+  };
 
   /* Auto-scroll logs */
   useEffect(() => {
@@ -402,73 +423,99 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
     }
   }, [logs, autoScroll]);
 
-  /* ── Plan: only the agents this query actually needs ── */
+  /* ── Dynamic Plan: Align workflow to actual agents participating in the task ── */
   const { planDef, positions, edgeDefs } = useMemo(() => {
-    const isFull = !planAgentIds || planAgentIds.length >= PIPELINE_DEF.length - 1;
-    if (isFull) {
-      return { planDef: PIPELINE_DEF, positions: NODE_POSITIONS, edgeDefs: EDGE_DEFS };
-    }
-    const wanted = new Set(['user-node', ...planAgentIds]);
-    const ordered = PIPELINE_DEF.filter(d => wanted.has(d.id));
-    // Linear layout + simple chain: user → a → b → c ...
-    const pos: Record<string, { x: number; y: number }> = {};
-    ordered.forEach((d, i) => { pos[d.id] = { x: 60 + i * 230, y: 240 }; });
-    const def = ordered.map((d, i) => ({ ...d, after: i === 0 ? [] : [ordered[i - 1].id] }));
-    const edges: [string, string][] = ordered.slice(1).map((d, i) => [ordered[i].id, d.id]);
-    return { planDef: def, positions: pos, edgeDefs: edges };
-  }, [planAgentIds]);
-
-  /* ── Build live steps from agent state ── */
-  const steps: PipelineStep[] = useMemo(() => {
-    return planDef.map(def => {
-      const agent = agents.find(a => a.id === def.agentId);
-      let status: StepStatus;
-      if (def.id === 'user-node') {
-        // User node is always revealed + completed once query is sent
-        status = 'completed';
-      } else {
-        status = mapAgentStatus(agent);
+    const dynamicAgents = [{ id: 'user-node', label: 'User', role: 'Query submitted' }];
+    const seen = new Set(['user-node']);
+    
+    // Add agents from discussions in order of appearance
+    (discussions || []).forEach(d => {
+      if (d.agent_name === 'System') return; // skip system announcements
+      const agentId = d.agent_name.toLowerCase().replace(/\s+/g, '-');
+      if (!seen.has(agentId)) {
+        seen.add(agentId);
+        dynamicAgents.push({
+          id: agentId,
+          label: d.agent_name,
+          role: d.agent_role
+        });
       }
-      return {
-        ...def,
-        status,
-        detail: def.id === 'user-node'
-          ? (query ? query.slice(0, 55) + (query.length > 55 ? '…' : '') : 'Query submitted')
-          : (agent?.currentTask ?? undefined),
+    });
+
+    // If no agents have spoken yet, show an Orchestrator starting up
+    if (dynamicAgents.length === 1) {
+      dynamicAgents.push({ id: 'orchestrator', label: 'Orchestrator', role: 'Task decomposition' });
+    }
+
+    // Symmetrical linear horizontal layout: agents pop in and connect dynamically
+    const pos: Record<string, { x: number; y: number }> = {};
+    dynamicAgents.forEach((a, i) => {
+      pos[a.id] = {
+        x: 80 + i * 270,
+        y: 220,
       };
     });
-  }, [agents, query, planDef]);
 
-  /* ── Progressive reveal: a node is revealed when ──
-     1. It is 'user-node' (always), OR
-     2. At least one of its predecessors is 'running' or 'completed', OR
-     3. It itself is 'running' or 'completed'
-  ── */
-  const revealedIds = useMemo<Set<string>>(() => {
-    const revealed = new Set<string>();
-    // user-node is always visible
-    revealed.add('user-node');
+    const def = dynamicAgents.map((a, i) => ({
+      ...a,
+      agentId: a.id,
+      after: i === 0 ? [] : [dynamicAgents[i - 1].id]
+    }));
 
-    // Run passes until stable (handles transitive deps)
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const step of planDef) {
-        if (revealed.has(step.id)) continue;
-        const liveStep = steps.find(s => s.id === step.id)!;
-        const selfActive = liveStep.status === 'running' || liveStep.status === 'completed' || liveStep.status === 'failed';
-        const anyPredActive = step.after.some(predId => {
-          const pred = steps.find(s => s.id === predId)!;
-          return pred.status === 'running' || pred.status === 'completed';
-        });
-        if (selfActive || anyPredActive) {
-          revealed.add(step.id);
-          changed = true;
-        }
+    const edges: [string, string][] = dynamicAgents.slice(1).map((a, i) => [dynamicAgents[i].id, a.id]);
+
+    return { planDef: def, positions: pos, edgeDefs: edges };
+  }, [discussions]);
+
+  /* ── Build live steps directly from discussion state (optimized single-active status) ── */
+  const steps: PipelineStep[] = useMemo(() => {
+    const isCompleted = !isProcessing || sessionStatus === 'completed' || sessionStatus === 'completed_with_warnings';
+    
+    // Identify the single most recently active agent who spoke (excluding System)
+    const nonSystemMsgs = (discussions || []).filter(d => d.agent_name !== 'System');
+    const latestActiveAgentId = nonSystemMsgs.length > 0
+      ? nonSystemMsgs[nonSystemMsgs.length - 1].agent_name.toLowerCase().replace(/\s+/g, '-')
+      : null;
+
+    return planDef.map(def => {
+      if (def.id === 'user-node') {
+        return {
+          ...def,
+          status: 'completed' as StepStatus,
+          detail: query ? query.slice(0, 55) + (query.length > 55 ? '…' : '') : 'Query submitted'
+        };
       }
-    }
-    return revealed;
-  }, [steps, planDef]);
+      
+      const msgs = (discussions || []).filter(d => 
+        d.agent_name.toLowerCase().replace(/\s+/g, '-') === def.id
+      );
+      
+      let status: StepStatus = 'pending';
+      let detail = '';
+      
+      if (msgs.length > 0) {
+        const lastMsg = msgs[msgs.length - 1];
+        detail = lastMsg.content.length > 40 ? lastMsg.content.slice(0, 40) + '...' : lastMsg.content;
+        
+        if (isCompleted) {
+          status = 'completed';
+        } else {
+          // Exactly ONE agent is 'running' at a time; all previous agents are 'completed'
+          status = (def.id === latestActiveAgentId) ? 'running' : 'completed';
+        }
+      } else if (def.id === 'orchestrator') {
+        status = isCompleted ? 'completed' : 'running';
+        detail = 'Coordinating agent cluster...';
+      }
+      
+      return { ...def, status, detail };
+    });
+  }, [planDef, discussions, query, isProcessing, sessionStatus]);
+
+  /* ── Progressive reveal: all dynamically created nodes are revealed ── */
+  const revealedIds = useMemo<Set<string>>(() => {
+    return new Set(planDef.map(d => d.id));
+  }, [planDef]);
 
   /* Overall progress (only count non-hidden steps) */
   const completedCount = steps.filter(s => s.status === 'completed').length;
@@ -567,6 +614,25 @@ export const PipelineExecutionModal: React.FC<PipelineExecutionModalProps> = ({
             }}>
               {visibleCount} agents active
             </span>
+
+            {/* Escape Impasse Override Button */}
+            {isProcessing && (
+              <button
+                onClick={handleEscape}
+                disabled={isEscaping}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold transition-all shadow-sm active:scale-95"
+                style={{
+                  background: isEscaping ? '#27272A' : '#7C2D12',
+                  color: isEscaping ? '#A1A1AA' : '#FDBA74',
+                  border: '1px solid #EA580C',
+                }}
+                title="Break agent debate deadlock and force advance pipeline directly to report finalization"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current text-amber-400" />
+                {isEscaping ? 'Escaping...' : 'Escape Impasse'}
+              </button>
+            )}
+
             <button
               onClick={onClose}
               className="p-1.5 rounded-md transition-colors"
