@@ -21,26 +21,35 @@ export const LossCurvesChart: React.FC<LossCurvesChartProps> = ({ metrics }) => 
   const [showBaseline, setShowBaseline] = useState(true);
 
   return (
-    <div className="rounded-2xl bg-[#0f131a] border border-slate-800 p-5 shadow-xl flex flex-col">
+    <div
+      className="rounded-xl border p-5 flex flex-col"
+      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+    >
       {/* Header & Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b"
+        style={{ borderColor: 'var(--border)' }}
+      >
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-lg bg-indigo-950/60 text-indigo-400 border border-indigo-800/40">
+          <div
+            className="p-1.5 rounded-lg border"
+            style={{ backgroundColor: 'var(--accent-subtle)', borderColor: 'var(--border)' }}
+          >
             {chartMode === 'loss' ? (
-              <TrendingDown className="w-4 h-4 text-emerald-400" />
+              <TrendingDown className="w-4 h-4 text-emerald-500" />
             ) : (
-              <Activity className="w-4 h-4 text-indigo-400" />
+              <Activity className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             )}
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white">
+            <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
               {chartMode === 'loss'
                 ? 'Empirical Loss Convergence Curves'
                 : chartMode === 'accuracy'
                 ? 'Evaluation Accuracy Progression'
                 : 'Combined Convergence & Accuracy'}
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
               Real-time validation tracking (Baseline vs Autonomous Experiment)
             </p>
           </div>
@@ -48,46 +57,34 @@ export const LossCurvesChart: React.FC<LossCurvesChartProps> = ({ metrics }) => 
 
         {/* Chart View Mode Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center bg-slate-900 rounded-lg p-0.5 border border-slate-800 text-xs">
-            <button
-              onClick={() => setChartMode('loss')}
-              className={`px-3 py-1 rounded-md transition-all ${
-                chartMode === 'loss'
-                  ? 'bg-indigo-600 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Loss Curves
-            </button>
-            <button
-              onClick={() => setChartMode('accuracy')}
-              className={`px-3 py-1 rounded-md transition-all ${
-                chartMode === 'accuracy'
-                  ? 'bg-indigo-600 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Accuracy (%)
-            </button>
-            <button
-              onClick={() => setChartMode('all')}
-              className={`px-3 py-1 rounded-md transition-all ${
-                chartMode === 'all'
-                  ? 'bg-indigo-600 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Dual Axis
-            </button>
+          <div
+            className="flex items-center rounded-lg p-0.5 border text-xs"
+            style={{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border)' }}
+          >
+            {(['loss', 'accuracy', 'all'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setChartMode(mode)}
+                className="px-3 py-1 rounded-md transition-all"
+                style={{
+                  backgroundColor: chartMode === mode ? 'var(--accent)' : 'transparent',
+                  color: chartMode === mode ? '#fff' : 'var(--text-secondary)',
+                  fontWeight: chartMode === mode ? 600 : 400,
+                }}
+              >
+                {mode === 'loss' ? 'Loss Curves' : mode === 'accuracy' ? 'Accuracy (%)' : 'Dual Axis'}
+              </button>
+            ))}
           </div>
 
           <button
             onClick={() => setShowBaseline(!showBaseline)}
-            className={`px-2.5 py-1 rounded-lg border text-xs transition-colors flex items-center gap-1.5 ${
-              showBaseline
-                ? 'bg-slate-800 border-slate-700 text-slate-200'
-                : 'bg-slate-900 border-slate-800 text-slate-500'
-            }`}
+            className="px-2.5 py-1 rounded-lg border text-xs transition-colors flex items-center gap-1.5"
+            style={{
+              backgroundColor: showBaseline ? 'var(--surface-secondary)' : 'transparent',
+              borderColor: 'var(--border)',
+              color: showBaseline ? 'var(--text-primary)' : 'var(--text-muted)',
+            }}
           >
             <Layers className="w-3 h-3" />
             <span>{showBaseline ? 'Baseline Visible' : 'Baseline Hidden'}</span>
@@ -133,12 +130,12 @@ export const LossCurvesChart: React.FC<LossCurvesChartProps> = ({ metrics }) => 
             )}
             <Tooltip
               contentStyle={{
-                backgroundColor: '#0d1117',
-                borderColor: '#30363d',
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border)',
                 borderRadius: '0.75rem',
                 fontSize: '11px',
-                color: '#e2e8f0',
-                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+                color: 'var(--text-primary)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
               }}
               formatter={(value: any, name: any) => [
                 typeof value === 'number' ? value.toFixed(3) : value,

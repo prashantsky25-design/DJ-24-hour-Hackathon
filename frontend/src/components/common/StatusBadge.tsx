@@ -7,78 +7,85 @@ interface StatusBadgeProps {
   showPulse?: boolean;
 }
 
+/* Semantic colors that work on both light and dark themes */
+const CONFIGS: Record<
+  AgentStatus,
+  { label: string; dotColor: string; textColor: string; bg: string; border: string }
+> = {
+  idle: {
+    label: 'IDLE',
+    dotColor: '#94a3b8',
+    textColor: '#64748b',
+    bg: 'rgba(100,116,139,0.1)',
+    border: 'rgba(100,116,139,0.25)',
+  },
+  spawning: {
+    label: 'SPAWNING',
+    dotColor: '#f59e0b',
+    textColor: '#d97706',
+    bg: 'rgba(245,158,11,0.1)',
+    border: 'rgba(245,158,11,0.35)',
+  },
+  running: {
+    label: 'RUNNING',
+    dotColor: '#10b981',
+    textColor: '#059669',
+    bg: 'rgba(16,185,129,0.1)',
+    border: 'rgba(16,185,129,0.35)',
+  },
+  completed: {
+    label: 'DONE',
+    dotColor: '#10b981',
+    textColor: '#059669',
+    bg: 'rgba(16,185,129,0.1)',
+    border: 'rgba(16,185,129,0.35)',
+  },
+  retired: {
+    label: 'RETIRED',
+    dotColor: '#8b5cf6',
+    textColor: '#7c3aed',
+    bg: 'rgba(139,92,246,0.1)',
+    border: 'rgba(139,92,246,0.3)',
+  },
+  error: {
+    label: 'ERROR',
+    dotColor: '#ef4444',
+    textColor: '#dc2626',
+    bg: 'rgba(239,68,68,0.1)',
+    border: 'rgba(239,68,68,0.35)',
+  },
+};
+
+const SIZE = {
+  sm: 'px-2 py-0.5 text-[9px] gap-1',
+  md: 'px-2.5 py-1 text-[10px] gap-1.5',
+  lg: 'px-3 py-1.5 text-xs gap-1.5',
+};
+
 export const StatusBadge: React.FC<StatusBadgeProps> = ({
   status,
   size = 'md',
   showPulse = true,
 }) => {
-  const configs: Record<
-    AgentStatus,
-    { label: string; bg: string; text: string; dot: string; border: string }
-  > = {
-    idle: {
-      label: 'IDLE',
-      bg: 'bg-slate-800/80',
-      text: 'text-slate-300',
-      dot: 'bg-slate-400',
-      border: 'border-slate-700/60',
-    },
-    spawning: {
-      label: 'SPAWNING',
-      bg: 'bg-amber-950/50',
-      text: 'text-amber-300',
-      dot: 'bg-amber-400',
-      border: 'border-amber-600/50',
-    },
-    running: {
-      label: 'RUNNING',
-      bg: 'bg-emerald-950/60',
-      text: 'text-emerald-300',
-      dot: 'bg-emerald-400',
-      border: 'border-emerald-500/50',
-    },
-    completed: {
-      label: 'DONE',
-      bg: 'bg-emerald-950/60',
-      text: 'text-emerald-300',
-      dot: 'bg-emerald-400',
-      border: 'border-emerald-500/50',
-    },
-    retired: {
-      label: 'RETIRED',
-      bg: 'bg-purple-950/40',
-      text: 'text-purple-300',
-      dot: 'bg-purple-400',
-      border: 'border-purple-600/40',
-    },
-    error: {
-      label: 'ERROR',
-      bg: 'bg-rose-950/60',
-      text: 'text-rose-300',
-      dot: 'bg-rose-400',
-      border: 'border-rose-600/50',
-    },
-  };
-
-  const c = configs[status] || configs.idle;
-
-  const sizeClasses = {
-    sm: 'px-2 py-0.5 text-[10px]',
-    md: 'px-2.5 py-1 text-xs',
-    lg: 'px-3 py-1.5 text-sm',
-  };
+  const c = CONFIGS[status] ?? CONFIGS.idle;
+  const isLive = status === 'running' || status === 'spawning';
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-medium rounded-full border ${c.bg} ${c.text} ${c.border} ${sizeClasses[size]} tracking-wider uppercase shadow-xs`}
+      className={`inline-flex items-center font-bold rounded-full border uppercase tracking-wider ${SIZE[size]}`}
+      style={{ backgroundColor: c.bg, borderColor: c.border, color: c.textColor }}
     >
-      <span className="relative flex h-2 w-2">
-        {showPulse && (status === 'running' || status === 'spawning') && (
+      <span className="relative flex items-center justify-center w-2 h-2 shrink-0">
+        {showPulse && isLive && (
           <span
-            className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${c.dot}`}
+            className="absolute inline-flex w-full h-full rounded-full opacity-60 animate-ping"
+            style={{ backgroundColor: c.dotColor }}
           />
         )}
-        <span className={`relative inline-flex rounded-full h-2 w-2 ${c.dot}`} />
+        <span
+          className="relative inline-flex rounded-full w-1.5 h-1.5"
+          style={{ backgroundColor: c.dotColor }}
+        />
       </span>
       {c.label}
     </span>

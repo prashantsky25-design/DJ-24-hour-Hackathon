@@ -17,54 +17,52 @@ export const LogsAndReasoningSplit: React.FC<LogsAndReasoningSplitProps> = ({
 }) => {
   const [layout, setLayout] = useState<'split' | 'terminal' | 'reasoning'>('split');
 
+  const TABS = [
+    { id: 'split'     as const, label: 'Split View',    icon: <Columns  className="w-3.5 h-3.5" /> },
+    { id: 'terminal'  as const, label: 'Terminal Only', icon: <Terminal className="w-3.5 h-3.5" /> },
+    { id: 'reasoning' as const, label: 'Reasoning CoT', icon: <Brain    className="w-3.5 h-3.5" /> },
+  ];
+
   return (
-    <div className="flex flex-col gap-3 h-full">
-      {/* Mode Bar */}
+    <div className="flex flex-col gap-3">
+      {/* ── Mode bar ── */}
       <div className="flex items-center justify-between px-1">
-        <div className="text-xs font-semibold text-slate-400">
-          Telemetry & Reasoning Inspection
+        <div className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+          Telemetry &amp; Reasoning Inspection
         </div>
-        <div className="flex items-center gap-1 bg-[#0f131a] p-1 rounded-xl border border-slate-800 text-xs">
-          <button
-            onClick={() => setLayout('split')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all ${
-              layout === 'split'
-                ? 'bg-indigo-600 text-white font-semibold'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Columns className="w-3.5 h-3.5" />
-            <span>Split View</span>
-          </button>
 
-          <button
-            onClick={() => setLayout('terminal')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all ${
-              layout === 'terminal'
-                ? 'bg-indigo-600 text-white font-semibold'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Terminal Only</span>
-          </button>
-
-          <button
-            onClick={() => setLayout('reasoning')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all ${
-              layout === 'reasoning'
-                ? 'bg-indigo-600 text-white font-semibold'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Brain className="w-3.5 h-3.5" />
-            <span>Reasoning CoT</span>
-          </button>
+        <div
+          className="flex items-center gap-1 p-1 rounded-xl border text-xs"
+          style={{ backgroundColor: 'var(--surface-secondary)', borderColor: 'var(--border)' }}
+        >
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setLayout(tab.id)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all"
+              style={{
+                backgroundColor: layout === tab.id ? 'var(--accent)' : 'transparent',
+                color: layout === tab.id ? '#fff' : 'var(--text-secondary)',
+                fontWeight: layout === tab.id ? 600 : 400,
+              }}
+              onMouseEnter={(e) => {
+                if (layout !== tab.id)
+                  e.currentTarget.style.backgroundColor = 'var(--hover)';
+              }}
+              onMouseLeave={(e) => {
+                if (layout !== tab.id)
+                  e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Panels Container */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+      {/* ── Panels ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {(layout === 'split' || layout === 'terminal') && (
           <div className={layout === 'terminal' ? 'lg:col-span-2' : ''}>
             <TerminalPanel logs={logs} onClearLogs={onClearLogs} />
