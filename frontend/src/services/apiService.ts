@@ -10,7 +10,7 @@ export class AresApiService {
   private reconnectTimer: number | null = null;
   private sessionId: string | null = null;
   private config: ConnectionConfig = {
-    mode: 'simulator',  // Default to simulator mode for demo (switch to 'websocket' when backend is ready)
+    mode: 'websocket',  // Default to real backend
     wsUrl: 'ws://localhost:8000/ws',
     sseUrl: 'http://localhost:8000/api/stream',
     orchestratorUrl: 'http://localhost:8000/api/orchestrate',
@@ -214,6 +214,22 @@ export class AresApiService {
 
   public getStatus(): boolean {
     return this.isConnected;
+  }
+
+  public getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  public async escapeSession(sessionId?: string): Promise<boolean> {
+    const sid = sessionId || this.sessionId;
+    if (!sid) return false;
+    try {
+      const url = `http://localhost:8000/api/session/${sid}/escape`;
+      const res = await fetch(url, { method: 'POST' });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   /**

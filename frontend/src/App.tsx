@@ -222,12 +222,6 @@ export function App() {
             </div>
           )}
 
-          {/* War Room */}
-          {activeTab === 'warroom' && (
-            <div className="max-w-4xl mx-auto px-4 py-4 h-[calc(100vh-7rem)]">
-              <WarRoom discussions={discussions} />
-            </div>
-          )}
 
           {/* Cockpit */}
           {activeTab === 'overview' && (
@@ -284,6 +278,7 @@ export function App() {
       <PipelineExecutionModal
         isOpen={pipelineModalOpen}
         onClose={handleModalViewReport}
+        sessionId={activeSession?.id}
         agents={agents}
         logs={logs}
         discussions={discussions}
