@@ -3,14 +3,6 @@ import { ExperimentMetadata } from '../../types/metric';
 import { ConnectionConfig } from '../../types/events';
 import {
   Menu,
-  Pause,
-  Play,
-  Square,
-  Settings2,
-  FileText,
-  Wifi,
-  WifiOff,
-  Activity,
   Info,
 } from 'lucide-react';
 
@@ -43,14 +35,6 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const isRunning = experiment.status === 'running';
   const isHalted  = experiment.status === 'halted';
-
-  const connLabel =
-    config?.mode === 'simulator' ? 'Simulator' :
-    config?.mode === 'websocket' ? 'WebSocket' : 'SSE';
-
-  const connColor =
-    config?.mode === 'simulator' ? '#60A5FA' :
-    isConnected ? 'var(--success)' : 'var(--warning)';
 
   return (
     <header
@@ -101,12 +85,11 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* ── Right controls ── */}
       <div className="flex items-center gap-2 shrink-0">
-
         {/* Implementation Details Button */}
         {onOpenImplementationDetails && (
           <button
             onClick={onOpenImplementationDetails}
-            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-colors font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-colors font-medium"
             style={{
               backgroundColor: 'var(--surface-secondary)',
               borderColor: 'var(--border)',
@@ -128,75 +111,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Implementation</span>
           </button>
         )}
-
-        {/* Connection badge */}
-        {config && (
-          <button
-            onClick={onOpenConnectionModal}
-            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-colors"
-            style={{
-              backgroundColor: 'var(--surface-secondary)',
-              borderColor: 'var(--border)',
-              color: 'var(--text-secondary)',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--hover)')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--surface-secondary)')}
-            title="Connection settings"
-          >
-            {config.mode !== 'simulator' && isConnected
-              ? <Wifi  className="w-3 h-3" style={{ color: connColor }} />
-              : <WifiOff className="w-3 h-3" style={{ color: connColor }} />
-            }
-            <span style={{ color: connColor }}>{connLabel}</span>
-            <Settings2 className="w-3 h-3 ml-0.5" style={{ color: 'var(--text-muted)' }} />
-          </button>
-        )}
-
-        {/* Report button */}
-        {hasReport && (
-          <button
-            onClick={onOpenReport}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-white"
-            style={{ backgroundColor: 'var(--success)' }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-          >
-            <FileText className="w-3 h-3" />
-            <span className="hidden sm:inline">Report</span>
-          </button>
-        )}
-
-        {/* Pause / Resume */}
-        {!isHalted && (
-          <button
-            onClick={onTogglePauseResume}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors"
-            style={{
-              backgroundColor: 'transparent',
-              borderColor: isRunning ? 'var(--warning)' : 'var(--success)',
-              color: isRunning ? 'var(--warning)' : 'var(--success)',
-            }}
-            title={isRunning ? 'Pause execution' : 'Resume execution'}
-          >
-            {isRunning
-              ? <><Pause className="w-3 h-3" /><span className="hidden sm:inline">Pause</span></>
-              : <><Play  className="w-3 h-3" /><span className="hidden sm:inline">Resume</span></>
-            }
-          </button>
-        )}
-
-        {/* Emergency stop — only icon, no label */}
-        <button
-          onClick={onOpenEmergencyModal}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-white"
-          style={{ backgroundColor: 'var(--error)' }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-          title="Emergency stop"
-        >
-          <Square className="w-3 h-3 fill-current" />
-          <span className="hidden sm:inline">Stop</span>
-        </button>
       </div>
     </header>
   );

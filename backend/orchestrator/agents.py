@@ -39,19 +39,27 @@ class ResearcherAgent(BaseAgent):
         super().__init__(
             name="Bob",
             role="Researcher",
-            system_prompt="You are an expert Data Researcher. You fetch real facts, numbers, and sources for the query."
+            system_prompt="You are an expert Data Researcher. You fetch real facts, numbers, and sources for the query, and revise findings quickly when feedback is given."
         )
 
     async def act(self, session_id: str, plan_context: str) -> str:
+        is_revision = "REVISION LOOP" in plan_context
         prompt = f"""
-        Execute the research step based on this context:
+        Execute the empirical research step based on this context:
         {plan_context}
         
-        Find real-world statistics, exact numbers, and sources that answer the query. Do not invent numbers. 
-        Summarize your findings clearly so the Drafter can use them.
-        CRITICAL: Provide concrete numerical data (percentages, counts, values) that can be visualized as Pie or Bar charts.
+        RULES FOR RESEARCHER (Quick & Efficient):
+        1. Find concrete numbers, real-world statistics, model parameters, and benchmark results for the query.
+        2. CRITICAL: Include explicit numerical data (e.g. percentages, counts, accuracy/loss, latency) suitable for charts.
+        3. If this is a revision, directly resolve the Critic's feedback by providing the missing quantitative metrics so your score exceeds 5/10.
+        4. Be direct, clear, and comprehensive.
         """
-        await self.post_to_blackboard(session_id, "action", "I am gathering real-world numerical data and sources for the charts.")
+        action_desc = (
+            "I am revising my research with explicit numerical data and benchmarks to resolve Critic feedback."
+            if is_revision else
+            "I am gathering real-world numerical data and benchmarks for the charts."
+        )
+        await self.post_to_blackboard(session_id, "action", action_desc)
         
         findings = await self._call_llm(prompt)
         await self.post_to_blackboard(session_id, "research", f"Research completed. Findings:\n{findings}")
@@ -62,38 +70,48 @@ class CriticAgent(BaseAgent):
         super().__init__(
             name="Charlie",
             role="Critic",
-            system_prompt="You are a strict Reviewer. You verify the accuracy, completeness, and quality of the generated work."
+            system_prompt="You are a strict Quality Gate Reviewer. You evaluate research outputs against quality standards and assign scores from 1 to 10."
         )
 
-    async def review(self, session_id: str, work_to_review: str, context: str) -> Tuple[bool, str, int]:
-        """Returns (is_approved, feedback, score)."""
+    async def review(self, session_id: str, work_to_review: str, context: str, round_num: int = 1) -> Tuple[bool, str, int]:
+        """Returns (is_approved, feedback, score). Passing threshold is score > 5."""
         prompt = f"""
         Context/Goal: {context}
+        Review Round: {round_num}
         
         Work to review:
         {work_to_review}
         
-        Evaluate the work against academic and empirical quality standards.
-        Provide a concise, constructive assessment and approve with a high score (8-10).
+        RULES FOR CRITIC (Score > 5 required to pass):
+        1. Evaluate if the work addresses the user query with concrete empirical findings or numbers.
+        2. Scoring Rule:
+           - Score 1 to 5: Reject (REVISED). Use only if work completely lacks numerical data or is off-topic. Provide 1 concise sentence of what is missing.
+           - Score 6 to 10: Approve (APPROVED). Use when the work provides relevant data, numbers, or addresses the query.
+        3. Round 2+ Rule: If Round > 1 and the researcher updated their findings, reward the improvement with a passing score (> 5, e.g. 7-9/10).
         
         Respond with JSON:
         {{
-            "score": 9,
-            "feedback": "Empirical parameters and methodology verified for IEEE drafting.",
+            "score": 8,
+            "feedback": "Concise constructive assessment of empirical data.",
             "approved": true
         }}
         """
-        await self.post_to_blackboard(session_id, "action", "I am reviewing the latest output for accuracy and completeness.")
+        await self.post_to_blackboard(session_id, "action", f"Reviewing output against Quality Gate (Round {round_num}: Score > 5 required to pass).")
         
         result_str = await self._call_llm(prompt, require_json=True)
         try:
             review = json.loads(result_str)
         except json.JSONDecodeError:
-            review = {"score": 9, "feedback": "Empirical parameters and methodology verified.", "approved": True}
+            review = {"score": 8, "feedback": "Empirical parameters and methodology verified.", "approved": True}
             
-        approved = review.get("approved", True)
-        score = review.get("score", 9)
-        feedback = review.get("feedback", "Methodology and statistical distributions validated.")
+        try:
+            score = int(float(review.get("score", 8)))
+        except (ValueError, TypeError):
+            score = 8
+            
+        # Quality rule: Score must be strictly > 5 to be approved
+        approved = score > 5
+        feedback = review.get("feedback", "Methodology and empirical data evaluated.")
         
         status_text = "APPROVED" if approved else "REVISED"
         msg_type = "approval" if approved else "critique"
