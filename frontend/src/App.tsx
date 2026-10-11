@@ -6,6 +6,7 @@ import { usePipelineSimulator } from './hooks/usePipelineSimulator';
 import { Header } from './components/layout/Header';
 import { Sidebar, AppViewTab } from './components/layout/Sidebar';
 import { ConnectionModal } from './components/layout/ConnectionModal';
+import { ImplementationDetailsModal } from './components/layout/ImplementationDetailsModal';
 import { EmergencyStopModal } from './components/steering/EmergencyStopModal';
 import { OverviewCockpit } from './components/overview/OverviewCockpit';
 import { AgentGraphPanel } from './components/graph/AgentGraphPanel';
@@ -24,6 +25,7 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [implementationModalOpen, setImplementationModalOpen] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<QueryPlan | null>(null);
 
   const { theme, toggleTheme } = useTheme();
@@ -75,6 +77,41 @@ export function App() {
       setCurrentPlan(plan);
       setPipelineModalOpen(true);
 
+      // ── Real-time terminal: clear stale logs, inject live query header ──
+      const now = new Date().toLocaleTimeString();
+      setLogs([
+        {
+          id: `q-start-${Date.now()}`,
+          timestamp: now,
+          source: 'system',
+          level: 'info',
+          message: `━━━ New Query ━━━ Intent: ${plan.label}`,
+        },
+        {
+          id: `q-text-${Date.now()}`,
+          timestamp: now,
+          source: 'agent',
+          level: 'info',
+          message: `[User] ${queryText.slice(0, 200)}${queryText.length > 200 ? '…' : ''}`,
+        },
+        ...(attachedFiles.length > 0
+          ? [{
+              id: `q-docs-${Date.now()}`,
+              timestamp: now,
+              source: 'system' as const,
+              level: 'info' as const,
+              message: `[Attachments] ${attachedFiles.map(f => f.name).join(', ')}`,
+            }]
+          : []),
+        {
+          id: `q-route-${Date.now()}`,
+          timestamp: now,
+          source: 'system',
+          level: 'info',
+          message: `[Orchestrator] Routing to agents: ${plan.agentIds.join(' → ')}`,
+        },
+      ]);
+
       // Animate the planned agents (always for chat, since no backend is involved there)
       if (config.mode === 'simulator' || plan.intent === 'chat') {
         setAgents(prev =>
@@ -89,7 +126,7 @@ export function App() {
 
       await sendResearchQuery(queryText, attachedFiles, plan);
     },
-    [sendResearchQuery, config.mode, setAgents, startSimulator]
+    [sendResearchQuery, config.mode, setAgents, setLogs, startSimulator]
   );
 
   /* When the footer button is clicked inside modal */
@@ -136,6 +173,7 @@ export function App() {
           onTogglePauseResume={togglePauseResume}
           onOpenConnectionModal={() => setConnectionModalOpen(true)}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          onOpenImplementationDetails={() => setImplementationModalOpen(true)}
         />
 
         <main className="flex-1 overflow-y-auto">
@@ -242,12 +280,16 @@ export function App() {
               selectedAgentId={selectedAgentId}
               onSubmitWhatIf={submitWhatIfPrompt}
               onClearLogs={clearLogs}
+              activeSession={activeSession}
+              isProcessing={isProcessing}
+              pipelineStepMessage={pipelineStepMessage}
+              intent={currentPlan?.intent ?? null}
             />
           )}
 
           {/* Terminal */}
           {activeTab === 'terminal' && (
-            <div className="max-w-7xl mx-auto px-4 py-4 h-[calc(100vh-7rem)]">
+            <div className="max-w-7xl mx-auto px-4 py-4">
               <LogsAndReasoningSplit
                 logs={logs}
                 reasoning={reasoning}
@@ -308,6 +350,11 @@ export function App() {
         config={config}
         isConnected={isConnected}
         onSave={updateConnectionConfig}
+      />
+
+      <ImplementationDetailsModal
+        isOpen={implementationModalOpen}
+        onClose={() => setImplementationModalOpen(false)}
       />
     </div>
   );
