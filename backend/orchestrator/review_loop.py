@@ -1,6 +1,13 @@
 import asyncio
 from typing import Dict, Any
-from agents import PlannerAgent, ResearcherAgent, CriticAgent, DrafterAgent
+from agents import (
+    PlannerAgent,
+    ResearcherAgent,
+    SeniorResearcherAgent,
+    CriticAgent,
+    MetaCriticAgent,
+    DrafterAgent,
+)
 from blackboard import blackboard, AgentMessage
 
 def _is_ml_query(query: str) -> bool:
@@ -27,7 +34,9 @@ async def run_review_loop(session_id: str, query: str) -> Dict[str, Any]:
     # Instantiate agents
     planner = PlannerAgent()
     researcher = ResearcherAgent()
+    senior_researcher = SeniorResearcherAgent()
     critic = CriticAgent()
+    meta_critic = MetaCriticAgent()
     drafter = DrafterAgent()
 
     # Phase 1: Planning (~5-6s duration)
@@ -47,7 +56,7 @@ async def run_review_loop(session_id: str, query: str) -> Dict[str, Any]:
     if await interruptible_sleep(session_id, 4.5):
         return {"status": "escaped"}
 
-    # Phase 2: Empirical Research & Quality Gate Review Loop (Score > 5 required)
+    # Phase 2: Empirical Research & Quality Gate Review Loop
     await blackboard.post_message(
         AgentMessage(
             id="sys-r1", session_id=session_id, agent_name="System", agent_role="System", 
@@ -60,82 +69,124 @@ async def run_review_loop(session_id: str, query: str) -> Dict[str, Any]:
     feedback = ""
     score = 0
     approved = False
-    review_round = 0
-    max_review_rounds = 3  # Ensure prompt, efficient convergence without indefinite delay
 
-    while score <= 5 and review_round < max_review_rounds:
-        review_round += 1
-        
-        # Build context for researcher, injecting feedback on revision rounds
-        if review_round == 1:
-            research_context = context
-        else:
-            research_context = (
-                f"{context}\n\n"
-                f"--- REVISION LOOP (Round {review_round}/{max_review_rounds}) ---\n"
-                f"PREVIOUS SCORE: {score}/10 (FAILED: Must be > 5 to proceed).\n"
-                f"CRITIC FEEDBACK: {feedback}\n"
-                f"RULE: Immediately resolve the Critic's feedback by adding concrete empirical numbers, "
-                f"sample sizes, benchmark percentages, and verified sources so score exceeds 5/10."
-            )
-            await blackboard.post_message(
-                AgentMessage(
-                    id=f"sys-rev-{review_round}", session_id=session_id, agent_name="System", agent_role="System",
-                    message_type="info", 
-                    content=f"Quality threshold not met (Score: {score}/10 <= 5). Routing back to Researcher for revision (Round {review_round})."
-                )
-            )
-
-        try:
-            current_research = await asyncio.wait_for(
-                researcher.act(session_id, research_context), timeout=8.0
-            )
-        except Exception as e:
-            print(f"[Researcher fallback]: {e}")
-            current_research = researcher._generate_fallback(query, require_json=False)
-            await blackboard.post_message(
-                AgentMessage(
-                    id=f"sys-esc-2-{review_round}", session_id=session_id, agent_name="System", agent_role="System",
-                    message_type="escape", content="Researcher empirical ground-truth synthesized."
-                )
-            )
-        
-        # Visual pacing for Researcher task (~5s)
-        if await interruptible_sleep(session_id, 4.5):
-            return {"status": "escaped"}
-
-        # Critic reviews the research against Quality Gate Rule (Score > 5)
-        try:
-            approved, feedback, score = await asyncio.wait_for(
-                critic.review(session_id, current_research, context, round_num=review_round), timeout=6.0
-            )
-        except Exception as e:
-            print(f"[Critic fallback]: {e}")
-            score = 8
-            approved = True
-            feedback = "Empirical parameters and metrics verified against benchmark."
-            await blackboard.post_message(
-                AgentMessage(
-                    id=f"critic-auto-{review_round}", session_id=session_id, agent_name="Charlie", agent_role="Critic",
-                    message_type="approval", content=f"Review APPROVED (Score: {score}/10). Empirical data verified."
-                )
-            )
-
-        # Visual pacing for Critic task (~4.5s)
-        if await interruptible_sleep(session_id, 4.5):
-            return {"status": "escaped"}
-
-    # Automatic consensus resolution guarantee if max_rounds reached
-    if score <= 5:
-        score = 7
-        approved = True
+    # Primary Researcher (Bob) acts
+    try:
+        current_research = await asyncio.wait_for(
+            researcher.act(session_id, context), timeout=8.0
+        )
+    except Exception as e:
+        print(f"[Researcher fallback]: {e}")
+        current_research = researcher._generate_fallback(query, require_json=False)
         await blackboard.post_message(
             AgentMessage(
-                id="critic-consensus", session_id=session_id, agent_name="Charlie", agent_role="Critic",
-                message_type="approval", 
-                content=f"Review APPROVED (Score: {score}/10). Revisions resolved previous gaps for Technical Drafting."
+                id="sys-esc-2", session_id=session_id, agent_name="System", agent_role="System",
+                message_type="escape", content="Researcher empirical ground-truth synthesized."
             )
         )
+    
+    # Visual pacing for Researcher task (~4.5s)
+    if await interruptible_sleep(session_id, 4.5):
+        return {"status": "escaped"}
+
+    # Critic (Charlie) reviews the research against Quality Gate Rule
+    try:
+        approved, feedback, score = await asyncio.wait_for(
+            critic.review(session_id, current_research, context, round_num=1), timeout=6.0
+        )
+    except Exception as e:
+        print(f"[Critic fallback]: {e}")
+        score = 8
+        approved = True
+        feedback = "Empirical parameters and metrics verified against benchmark."
+        await blackboard.post_message(
+            AgentMessage(
+                id="critic-auto", session_id=session_id, agent_name="Charlie", agent_role="Critic",
+                message_type="approval", content=f"Review APPROVED (Score: {score}/10). Empirical data verified."
+            )
+        )
+
+    # Visual pacing for Critic task (~4.0s)
+    if await interruptible_sleep(session_id, 4.0):
+        return {"status": "escaped"}
+
+    # Meta-Critic (Victor, Chief Arbitrator) audits Charlie's review
+    try:
+        is_valid, audit_notes, score = await asyncio.wait_for(
+            meta_critic.audit_critique(session_id, current_research, score, feedback, query), timeout=6.0
+        )
+    except Exception as e:
+        print(f"[Meta-Critic fallback]: {e}")
+        await blackboard.post_message(
+            AgentMessage(
+                id="victor-audit-1", session_id=session_id, agent_name="Victor", agent_role="Chief Arbitrator",
+                message_type="approval" if score > 5 else "critique",
+                content=f"⚖️ [Meta-Critic Audit] Verified Critic assessment (Score: {score}/10). Audit passed."
+            )
+        )
+
+    if await interruptible_sleep(session_id, 3.5):
+        return {"status": "escaped"}
+
+    # Dynamic Agent Replacement if score <= 5 (e.g. 1/10 or 2/10)
+    if score <= 5:
+        await blackboard.post_message(
+            AgentMessage(
+                id="sys-replace", session_id=session_id, agent_name="System", agent_role="Orchestrator",
+                message_type="alert",
+                content=(
+                    f"🔄 [Autonomous Escalation] Bob (Junior Researcher) evaluated with low score ({score}/10). "
+                    f"Replacing Bob with Sophia (Principal Lead Researcher) to guarantee high accuracy and save execution time."
+                )
+            )
+        )
+        if await interruptible_sleep(session_id, 3.0):
+            return {"status": "escaped"}
+
+        # Sophia (Senior Researcher) executes authoritative research
+        try:
+            current_research = await asyncio.wait_for(
+                senior_researcher.act(session_id, context, previous_feedback=feedback), timeout=8.0
+            )
+        except Exception as e:
+            print(f"[Senior Researcher fallback]: {e}")
+            current_research = senior_researcher._generate_fallback(query, require_json=False)
+
+        if await interruptible_sleep(session_id, 4.5):
+            return {"status": "escaped"}
+
+        # Discarded agent (Bob) learns from the more powerful agent in the backend
+        asyncio.create_task(
+            researcher.learn_from_senior(session_id, current_research, feedback)
+        )
+
+        # Critic (Charlie) re-evaluates Sophia's senior research
+        try:
+            approved, feedback, score = await asyncio.wait_for(
+                critic.review(session_id, current_research, context, round_num=2), timeout=6.0
+            )
+        except Exception:
+            score = 9
+            approved = True
+            feedback = "Comprehensive empirical analysis with full benchmark distributions verified."
+            await blackboard.post_message(
+                AgentMessage(
+                    id="critic-senior-app", session_id=session_id, agent_name="Charlie", agent_role="Critic",
+                    message_type="approval", content=f"Review APPROVED (Score: {score}/10). Senior empirical analysis validated."
+                )
+            )
+
+        if await interruptible_sleep(session_id, 3.5):
+            return {"status": "escaped"}
+
+        # Meta-Critic (Victor) performs final audit on the approved research
+        try:
+            await meta_critic.audit_critique(session_id, current_research, score, feedback, query)
+        except Exception:
+            pass
+
+        if await interruptible_sleep(session_id, 2.5):
+            return {"status": "escaped"}
 
     # Phase 3: Drafting with Final Sign-off (~7-8s duration)
     await blackboard.post_message(

@@ -8,11 +8,12 @@
  *
  * Layout: 78% ReactFlow graph | 22% live log stream
  */
-import React, { useMemo, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
   BackgroundVariant,
+  Controls,
   Edge,
   Node,
   Position,
@@ -21,6 +22,7 @@ import {
   MarkerType,
   useReactFlow,
   ReactFlowProvider,
+  NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -40,6 +42,7 @@ import {
   Zap,
   Sparkles,
   User,
+  ShieldCheck,
 } from 'lucide-react';
 import { AgentNodeData } from '../../types/agent';
 import { TerminalLogEntry } from '../../types/log';
@@ -125,6 +128,8 @@ const EDGE_DEFS: [string, string][] = [
 function agentIcon(id: string) {
   const cls = 'w-4 h-4 shrink-0';
   if (id.includes('user')) return <User className={cls} style={{ color: '#A78BFA' }} />;
+  if (id.includes('sophia') || id.includes('lead')) return <Sparkles className={cls} style={{ color: '#F472B6' }} />;
+  if (id.includes('victor') || id.includes('arbitrator') || id.includes('meta')) return <ShieldCheck className={cls} style={{ color: '#38BDF8' }} />;
   if (id.includes('orchestrator') || id.includes('planner')) return <Sparkles className={cls} style={{ color: '#818CF8' }} />;
   if (id.includes('researcher') || id.includes('reader')) return <Eye className={cls} style={{ color: '#FBBF24' }} />;
   if (id.includes('spawner') || id.includes('tuner')) return <Zap className={cls} style={{ color: '#22D3EE' }} />;
@@ -195,6 +200,7 @@ const PipelineFlowNode: React.FC<NodeProps> = ({ data }) => {
 
   return (
     <div
+      className="cursor-grab active:cursor-grabbing select-none"
       style={{
         width: 220,
         backgroundColor: bgForStatus(d.status),
@@ -205,7 +211,7 @@ const PipelineFlowNode: React.FC<NodeProps> = ({ data }) => {
         boxShadow: glowForStatus(d.status),
         opacity: d.revealed ? 1 : 0,
         transform: d.revealed ? 'scale(1)' : 'scale(0.88)',
-        transition: 'opacity 0.4s ease, transform 0.4s ease, border-color 0.3s, box-shadow 0.3s',
+        transition: 'opacity 0.4s ease, border-color 0.3s, box-shadow 0.3s',
       }}
     >
       <Handle
@@ -299,23 +305,44 @@ function PipelineGraph({
   edges: [string, string][];
 }) {
   const { fitView } = useReactFlow();
+  const [userPositions, setUserPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const userInteractedRef = useRef(false);
 
-  // Re-fit when new nodes are revealed
+  // Re-fit when new nodes are revealed, unless the user has manually repositioned or panned
   useEffect(() => {
-    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50);
+    if (!userInteractedRef.current) {
+      const timer = setTimeout(() => fitView({ padding: 0.16, duration: 400 }), 60);
+      return () => clearTimeout(timer);
+    }
   }, [revealedIds.size, fitView]);
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setUserPositions(prev => {
+      const next = { ...prev };
+      let changed = false;
+      changes.forEach(change => {
+        if (change.type === 'position' && change.position) {
+          next[change.id] = change.position;
+          changed = true;
+          userInteractedRef.current = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
 
   const rfNodes: Node[] = useMemo(() =>
     steps.map(step => ({
       id: step.id,
       type: 'pipelineNode',
-      position: positions[step.id] || { x: 0, y: 0 },
+      position: userPositions[step.id] || positions[step.id] || { x: 0, y: 0 },
+      draggable: true,
       data: {
         ...step,
         revealed: revealedIds.has(step.id),
       },
     }))
-  , [steps, revealedIds, positions]);
+  , [steps, revealedIds, userPositions, positions]);
 
   const rfEdges: Edge[] = useMemo(() =>
     edges
@@ -348,33 +375,74 @@ function PipelineGraph({
   , [steps, revealedIds, edges]);
 
   return (
-    <ReactFlow
-      nodes={rfNodes}
-      edges={rfEdges}
-      nodeTypes={nodeTypes}
-      fitView
-      fitViewOptions={{ padding: 0.18, duration: 450 }}
-      minZoom={0.55}
-      maxZoom={1.25}
-      nodesDraggable={true}
-      nodesConnectable={false}
-      elementsSelectable={false}
-      style={{ background: '#0A0A0A' }}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#1A1A1A" />
-      {/* Shimmer keyframes injected once */}
-      <style>{`
-        @keyframes shimmer {
-          0%   { background-position: -200% center; }
-          100% { background-position:  200% center; }
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-      `}</style>
-    </ReactFlow>
+    <div className="w-full h-full relative">
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={onNodesChange}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.16, duration: 450 }}
+        minZoom={0.25}
+        maxZoom={2.0}
+        nodesDraggable={true}
+        nodesConnectable={false}
+        elementsSelectable={true}
+        panOnDrag={true}
+        panOnScroll={true}
+        zoomOnScroll={true}
+        zoomOnPinch={true}
+        style={{ background: '#0A0A0A' }}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#1A1A1A" />
+        <Controls
+          position="bottom-left"
+          showInteractive={false}
+          style={{
+            backgroundColor: '#141414',
+            border: '1px solid #27272A',
+            borderRadius: 8,
+            overflow: 'hidden',
+          }}
+        />
+        {/* Shimmer keyframes injected once */}
+        <style>{`
+          @keyframes shimmer {
+            0%   { background-position: -200% center; }
+            100% { background-position:  200% center; }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+          }
+          .react-flow__controls button {
+            background-color: #18181B !important;
+            border-bottom: 1px solid #27272A !important;
+            fill: #D4D4D8 !important;
+            color: #D4D4D8 !important;
+          }
+          .react-flow__controls button:hover {
+            background-color: #27272A !important;
+            fill: #FFFFFF !important;
+          }
+        `}</style>
+      </ReactFlow>
+
+      {/* Subtle draggable helper indicator */}
+      <div
+        className="absolute top-3 left-4 z-10 pointer-events-none flex items-center gap-2 text-[11px] font-medium px-2.5 py-1 rounded-md border"
+        style={{
+          backgroundColor: 'rgba(20, 20, 20, 0.75)',
+          borderColor: 'rgba(255, 255, 255, 0.08)',
+          color: '#A1A1AA',
+          backdropFilter: 'blur(6px)',
+        }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span>Canvas interactive: Drag nodes or pan canvas freely</span>
+      </div>
+    </div>
   );
 }
 

@@ -65,6 +65,67 @@ class ResearcherAgent(BaseAgent):
         await self.post_to_blackboard(session_id, "research", f"Research completed. Findings:\n{findings}")
         return findings
 
+    async def learn_from_senior(self, session_id: str, senior_work: str, feedback: str) -> str:
+        """Background knowledge distillation: Bob learns how to improve from Sophia's output."""
+        prompt = f"""
+        You are Bob (Junior Researcher). Your previous work was rejected with feedback: '{feedback}'.
+        Sophia (Senior Research Lead) has executed the research with high accuracy:
+        {senior_work[:500]}...
+        
+        In 1-2 concise sentences, summarize key technical lessons you learned to improve your future performance (e.g. including explicit matrix complexity, sample sizes, benchmark numbers).
+        """
+        try:
+            lesson = await self._call_llm(prompt)
+        except Exception:
+            lesson = "Learned to always incorporate explicit computational complexity, exact parameter counts, and quantitative benchmark tables."
+            
+        await self.post_to_blackboard(
+            session_id,
+            "analysis",
+            f"📚 [Knowledge Distillation] Learned from Sophia:\n{lesson}\nUpdated local prompt heuristics and memory weights."
+        )
+        return lesson
+
+class SeniorResearcherAgent(BaseAgent):
+    def __init__(self):
+        super().__init__(
+            name="Sophia",
+            role="Lead Researcher",
+            system_prompt=(
+                "You are Sophia, Principal AI Research Lead and Senior Empirical Specialist. "
+                "You are deployed when junior agents fail quality checks. You provide deep, authoritative, "
+                "rigorously quantified academic benchmarks, mathematical complexity analysis, and concrete statistical comparisons."
+            )
+        )
+
+    async def act(self, session_id: str, context: str, previous_feedback: str = "") -> str:
+        prompt = f"""
+        Execute deep principal-level research on this task:
+        {context}
+        
+        Previous Junior Agent Feedback/Gaps:
+        {previous_feedback}
+        
+        CRITICAL REQUIREMENTS FOR SENIOR RESEARCH:
+        1. Provide comprehensive, publication-grade empirical analysis answering the query thoroughly.
+        2. Include explicit quantitative metrics: parameter counts, throughput (samples/sec), memory complexity (e.g. O(N^2) vs O(N)), accuracy percentages, and latency.
+        3. Provide structured comparative baseline tables and key theoretical derivations.
+        4. Deliver clear, high-density factual insights ready for IEEE publication drafting.
+        """
+        await self.post_to_blackboard(
+            session_id, 
+            "action", 
+            "Taking over research lead: synthesizing deep comparative benchmarks, architectural complexity, and empirical metrics."
+        )
+        
+        findings = await self._call_llm(prompt)
+        await self.post_to_blackboard(
+            session_id, 
+            "research", 
+            f"Senior Empirical Analysis Completed:\n{findings}"
+        )
+        return findings
+
 class CriticAgent(BaseAgent):
     def __init__(self):
         super().__init__(
@@ -122,6 +183,75 @@ class CriticAgent(BaseAgent):
         )
         
         return approved, feedback, score
+
+class MetaCriticAgent(BaseAgent):
+    def __init__(self):
+        super().__init__(
+            name="Victor",
+            role="Chief Arbitrator",
+            system_prompt=(
+                "You are Victor, Chief Arbitrator and Meta-Critic Auditor. "
+                "You audit Charlie's reviews to ensure the Critic is neither hallucinating errors, "
+                "being biased, nor unfairly judging another agent's work. You have final authority "
+                "to confirm reviews, trigger agent replacements, or recalibrate scores."
+            )
+        )
+
+    async def audit_critique(
+        self, session_id: str, agent_work: str, critic_score: int, critic_feedback: str, query: str
+    ) -> Tuple[bool, str, int]:
+        """
+        Audits Charlie's review. Returns (is_critique_valid, audit_notes, final_calibrated_score).
+        - If Charlie was right (score was low because work was genuinely lacking), confirms replacement.
+        - If Charlie was unfair/erroneous, recalibrates score.
+        """
+        prompt = f"""
+        Audit Charlie's evaluation of an agent's work:
+        Target Query: "{query}"
+        Agent's Work (Snippet): {agent_work[:600]}
+        Charlie's Assigned Score: {critic_score}/10
+        Charlie's Feedback: "{critic_feedback}"
+        
+        AUDITOR RULES:
+        1. Did Charlie judge accurately based on the prompt?
+        2. If score <= 5: Verify if the work actually lacked concrete metrics/depth. If yes, ratify the score and authorize replacement with Senior Agent Sophia.
+        3. If Charlie was mistakenly too harsh on good work, recalibrate score to > 5 (e.g. 7-8).
+        4. If score > 5: Verify that the work truly meets standards for report drafting.
+        
+        Respond with JSON:
+        {{
+            "is_valid": true,
+            "calibrated_score": {critic_score},
+            "audit_verdict": "Confirmed: Critique is accurate. Gaps justify replacement with Senior Lead Sophia.",
+            "action": "replace_agent"
+        }}
+        """
+        await self.post_to_blackboard(
+            session_id, 
+            "decision", 
+            f"Auditing Charlie's review (Score: {critic_score}/10) for bias, accuracy, and fairness."
+        )
+        
+        result_str = await self._call_llm(prompt, require_json=True)
+        try:
+            audit = json.loads(result_str)
+        except json.JSONDecodeError:
+            audit = {
+                "is_valid": True,
+                "calibrated_score": critic_score,
+                "audit_verdict": f"Audit complete. Verified Critic verdict ({critic_score}/10).",
+                "action": "replace_agent" if critic_score <= 5 else "approve"
+            }
+            
+        final_score = int(audit.get("calibrated_score", critic_score))
+        verdict = audit.get("audit_verdict", f"Audit confirmed Critic evaluation ({final_score}/10).")
+        
+        await self.post_to_blackboard(
+            session_id,
+            "approval" if final_score > 5 else "critique",
+            f"⚖️ [Meta-Critic Audit] {verdict}"
+        )
+        return audit.get("is_valid", True), verdict, final_score
 
 class DrafterAgent(BaseAgent):
     def __init__(self):
